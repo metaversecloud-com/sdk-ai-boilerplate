@@ -136,6 +136,153 @@ Add leaderboard entry removal when visitor restarts (see sdk-ai-boilerplate exam
 3. Update the entire leaderboard object back to the asset
 ```
 
+## Visitor Interactions
+
+### Add Toast Notifications
+```
+Add toast notification functionality (see sdk-ai-boilerplate examples/visitorInteractions.md):
+1. Import Visitor from topiaInit
+2. Use visitor.fireToast({ groupId, title, text })
+3. Wrap in .catch() for fire-and-forget pattern
+4. Use groupId to group related notifications
+```
+
+### Move Visitor to Asset
+```
+Add visitor movement to an asset location (see sdk-ai-boilerplate examples/visitorInteractions.md):
+1. Get the target dropped asset to find its position
+2. Get the visitor instance
+3. Call visitor.moveVisitor({ x, y, shouldTeleportVisitor: false })
+4. Optionally close iframe after moving
+```
+
+### Teleport Visitor
+```
+Add teleport functionality (see sdk-ai-boilerplate examples/visitorInteractions.md):
+1. Get target position from dropped asset or world anchor
+2. Call visitor.moveVisitor({ x, y, shouldTeleportVisitor: true })
+3. Track teleport via analytics in updateDataObject
+```
+
+### Manage Iframes
+```
+Add iframe open/close functionality (see sdk-ai-boilerplate examples/visitorInteractions.md):
+1. Close existing: visitor.closeIframe(assetId)
+2. Open new: visitor.openIframe({ droppedAssetId, link, shouldOpenInDrawer, title })
+3. Use fire-and-forget pattern with .catch() for close operations
+```
+
+## Concurrency & Multiplayer
+
+### Add Locking for Shared State
+```
+Add locking to prevent race conditions (see sdk-ai-boilerplate examples/lockingPatterns.md):
+1. Create time-based lock ID: new Date(Math.round(Date.now() / 5000) * 5000)
+2. Include asset ID and context in lock ID
+3. Pass lock option: { lock: { lockId, releaseLock: true } }
+4. Handle 409 conflicts gracefully
+```
+
+### Add Turn-Based Game Logic
+```
+Add turn-based multiplayer (see sdk-ai-boilerplate examples/lockingPatterns.md):
+1. Track lastPlayerTurn (visitorId) in data object
+2. Track turnCount for composite lock IDs
+3. Validate turn before allowing moves
+4. Use locking to prevent simultaneous moves
+5. Return 409 if lock conflict occurs
+```
+
+### Build Complete Multiplayer Game
+```
+Build a turn-based multiplayer game (see sdk-ai-boilerplate examples/multiplayerTurnBased.md):
+1. Create GameDataType with player slots, turn tracking, and game state
+2. Add player selection controller for joining games
+3. Add move controller with turn validation and locking
+4. Add win detection utility for game-specific rules
+5. Add game reset controller
+6. Track analytics for wins, completions, and ties
+```
+
+### Add Player Selection
+```
+Add player selection/joining for multiplayer (see sdk-ai-boilerplate examples/multiplayerTurnBased.md):
+1. Create player slots in game data (player1, player2)
+2. Validate slot is available before joining
+3. Update playerCount and trigger world activity
+4. Show toast notification to player
+```
+
+## Analytics & Tracking
+
+### Add Analytics Tracking
+```
+Add analytics tracking to the app (see sdk-ai-boilerplate examples/analyticsTracking.md):
+1. Pass analytics array to updateDataObject/setDataObject
+2. Include analyticName, profileId, urlSlug, uniqueKey
+3. Use uniqueKey to control deduplication (profileId for one-per-user)
+4. Track starts, completions, wins, and custom events
+```
+
+### Track Game Completion
+```
+Add completion tracking (see sdk-ai-boilerplate examples/analyticsTracking.md):
+1. On game end, track "completions" for all players
+2. Track "wins" for winner only
+3. Track "ties" if applicable
+4. Use profileId as uniqueKey for one completion per user
+```
+
+## Visual Effects
+
+### Add Particle Effects
+```
+Add particle effects (see sdk-ai-boilerplate examples/worldActivity.md):
+1. Use world.triggerParticle({ name, duration, position })
+2. Get position from dropped asset
+3. Use fire-and-forget pattern with .catch()
+4. Choose effect: fireworks_1, confetti_1, sparkle_1, smoke_puff
+```
+
+### Add World Activity Indicators
+```
+Add activity indicators (see sdk-ai-boilerplate examples/worldActivity.md):
+1. Import WorldActivityType from SDK
+2. Use world.triggerActivity({ type, assetId })
+3. GAME_ON for active games, GAME_WAITING for waiting, GAME_OVER for finished
+```
+
+### Add Complete Feedback Flow
+```
+Add user feedback on action completion (see sdk-ai-boilerplate examples/worldActivity.md):
+1. Update data object with changes
+2. Trigger particle effect at asset position
+3. Show toast notification
+4. Optionally trigger world activity indicator
+Use Promise.all for parallel execution of non-blocking operations
+```
+
+## Data Migration
+
+### Migrate Data Schema
+```
+Add data migration for schema changes (see sdk-ai-boilerplate examples/dataMigration.md):
+1. Check if old key/format exists
+2. Convert to new format
+3. Write new format with locking
+4. Delete old key
+5. Make migration idempotent (safe to run multiple times)
+```
+
+### Add Version-Based Migration
+```
+Add versioned data migration (see sdk-ai-boilerplate examples/dataMigration.md):
+1. Add _version field to data objects
+2. Create migration functions for each version upgrade
+3. Apply migrations in sequence on data read
+4. Persist migrated data with locking
+```
+
 ## Combined Features
 
 ### Full Game Setup
@@ -172,6 +319,15 @@ Add a collectibles/items system:
 | Configuration | "Add config endpoint (see sdk-ai-boilerplate examples/handleGetConfiguration.md)" |
 | Game Reset | "Add admin reset (see sdk-ai-boilerplate examples/handleResetGameState.md)" |
 | Leaderboard | "Add leaderboard system (see sdk-ai-boilerplate examples/leaderboard.md)" |
+| Toast Notifications | "Add toast notifications (see sdk-ai-boilerplate examples/visitorInteractions.md)" |
+| Move/Teleport Visitor | "Add visitor movement (see sdk-ai-boilerplate examples/visitorInteractions.md)" |
+| Iframe Management | "Add iframe open/close (see sdk-ai-boilerplate examples/visitorInteractions.md)" |
+| Concurrency Locking | "Add locking for multiplayer (see sdk-ai-boilerplate examples/lockingPatterns.md)" |
+| Multiplayer Game | "Build turn-based game (see sdk-ai-boilerplate examples/multiplayerTurnBased.md)" |
+| Analytics | "Add analytics tracking (see sdk-ai-boilerplate examples/analyticsTracking.md)" |
+| Particle Effects | "Add particle effects (see sdk-ai-boilerplate examples/worldActivity.md)" |
+| Activity Indicators | "Add world activity indicators (see sdk-ai-boilerplate examples/worldActivity.md)" |
+| Data Migration | "Add data migration (see sdk-ai-boilerplate examples/dataMigration.md)" |
 
 ## Tips for Best Results
 
@@ -199,4 +355,19 @@ Add a collectibles/items system:
 5. **Update documentation**: After implementation, ask:
    ```
    Update sdk-ai-boilerplate documentation if this pattern is reusable across apps
+   ```
+
+6. **For multiplayer/games**: Always include locking:
+   ```
+   This is a multiplayer feature. Add locking to prevent race conditions.
+   See sdk-ai-boilerplate examples/lockingPatterns.md
+   ```
+
+7. **For visitor feedback**: Combine interactions:
+   ```
+   After completing the action:
+   1. Update the data object
+   2. Show a toast notification
+   3. Optionally close iframe or move visitor
+   See sdk-ai-boilerplate examples/visitorInteractions.md
    ```

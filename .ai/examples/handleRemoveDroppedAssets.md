@@ -37,6 +37,8 @@ export const handleRemoveDroppedAssets = async (req: Request, res: Response): Pr
       }
 
       // Use the static World.deleteDroppedAssets method to remove the assets
+      // This should always be done last to ensure all functionality in this controller using credentials will work as expected.
+
       await World.deleteDroppedAssets(urlSlug, ids, process.env.INTERACTIVE_SECRET!, credentials);
     }
 

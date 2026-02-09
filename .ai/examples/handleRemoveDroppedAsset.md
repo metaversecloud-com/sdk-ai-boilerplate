@@ -57,7 +57,8 @@ export const handleRemoveDroppedAsset = async (req: Request, res: Response): Pro
         }),
       );
 
-    // Delete the dropped asset from the world
+    // Delete the dropped asset from the world.
+    // This should always be done last to ensure all functionality in this controller using credentials will work as expected.
     await droppedAsset.deleteDroppedAsset();
 
     return res.json({ success: true });
