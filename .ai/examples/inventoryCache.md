@@ -1,6 +1,6 @@
 # Inventory Cache Utility
 
-Use the SDK's Ecosystem controller to fetch and cache ecosystem inventory items with a 24-hour TTL. This pattern reduces API calls and improves performance when accessing badges, decorations, or other inventory items.
+Use the SDK's Ecosystem controller to fetch and cache ecosystem inventory items with a 6-hour TTL. This pattern reduces API calls and improves performance when accessing badges, decorations, or other inventory items.
 
 ## When to Use
 
@@ -28,8 +28,8 @@ interface CachedInventory {
   timestamp: number;
 }
 
-// Cache duration: 24 hours in milliseconds
-const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
+// Cache duration: 6 hours in milliseconds
+const CACHE_DURATION_MS = 6 * 60 * 60 * 1000;
 
 // In-memory cache
 let inventoryCache: CachedInventory | null = null;
@@ -209,7 +209,9 @@ export const awardBadge = async ({ badgeName, credentials }: { badgeName: string
 };
 ```
 
-### Use in a Controller
+### Use in a Controller (Server)
+
+Always check for the `forceRefreshInventory` query param and pass it through to the cache. This allows callers to bypass the cache when inventory has been updated.
 
 ```ts
 import { Request, Response } from "express";
@@ -218,9 +220,10 @@ import { errorHandler, getCredentials, getCachedInventoryItems } from "../utils/
 export const handleGetGameState = async (req: Request, res: Response) => {
   try {
     const credentials = getCredentials(req.query);
+    const forceRefresh = req.query.forceRefreshInventory === "true";
 
     // Get cached inventory items
-    const items = await getCachedInventoryItems({ credentials });
+    const items = await getCachedInventoryItems({ credentials, forceRefresh });
 
     // Filter badges for the response
     const badges = items
@@ -254,16 +257,36 @@ export const handleGetGameState = async (req: Request, res: Response) => {
 };
 ```
 
+### Pass forceRefreshInventory from the Client
+
+Any component that calls a cached inventory endpoint must read `forceRefreshInventory` from the URL search params using `useSearchParams` and forward it as a query param in the API call.
+
+```tsx
+import { useSearchParams } from "react-router-dom";
+import { backendAPI } from "@/utils";
+
+const [searchParams] = useSearchParams();
+const forceRefreshInventory = searchParams.get("forceRefreshInventory") === "true";
+
+useEffect(() => {
+  backendAPI
+    .get("/game-state", { params: { forceRefreshInventory } }) } })
+    .then((response) => {
+      // handle response
+    });
+}, [/* deps */]);
+```
+
 ## Cache Behavior
 
-| Scenario                         | Behavior                          |
-| -------------------------------- | --------------------------------- |
-| First request                    | Fetches from API, caches result   |
-| Subsequent requests (within 24h) | Returns cached data               |
-| After 24 hours                   | Fetches fresh data, updates cache |
-| `forceRefresh: true`             | Always fetches fresh data         |
-| API failure with existing cache  | Returns stale cache as fallback   |
-| API failure without cache        | Throws error                      |
+| Scenario                        | Behavior                          |
+| ------------------------------- | --------------------------------- |
+| First request                   | Fetches from API, caches result   |
+| Subsequent requests (within 6h) | Returns cached data               |
+| After 6 hours                   | Fetches fresh data, updates cache |
+| `forceRefresh: true`            | Always fetches fresh data         |
+| API failure with existing cache | Returns stale cache as fallback   |
+| API failure without cache       | Throws error                      |
 
 ## API Reference
 
@@ -320,5 +343,5 @@ items.filter((item) => item.metadata?.category === "rare");
 
 - The cache is stored in server memory and resets when the server restarts
 - All requests share the same cache (singleton pattern)
-- The 24-hour TTL balances freshness with API efficiency
+- The 6-hour TTL balances freshness with API efficiency
 - Stale cache fallback ensures graceful degradation during API issues
