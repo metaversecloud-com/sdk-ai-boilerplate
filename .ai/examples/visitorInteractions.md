@@ -83,13 +83,13 @@ await Promise.all([
   keyAsset.updateDataObject({ completed: true }),
 
   // Toast notification (with its own error handling)
-  visitor.fireToast({
-    groupId: theme,
-    title: "Congratulations!",
-    text: "You completed the challenge!",
-  }).catch((error) =>
-    errorHandler({ error, functionName: "handleComplete", message: "Error firing toast" })
-  ),
+  visitor
+    .fireToast({
+      groupId: theme,
+      title: "Congratulations!",
+      text: "You completed the challenge!",
+    })
+    .catch((error) => errorHandler({ error, functionName: "handleComplete", message: "Error firing toast" })),
 ]);
 ```
 
@@ -303,10 +303,7 @@ When a game ends or resets, close iframes for all participants:
  * @param visitors - Object containing visitor instances keyed by ID
  * @param droppedAssetId - The asset ID to close
  */
-export const closeIframeForVisitors = async (
-  visitors: { [key: string]: Visitor },
-  droppedAssetId: string,
-) => {
+export const closeIframeForVisitors = async (visitors: { [key: string]: Visitor }, droppedAssetId: string) => {
   // Skip in development for easier testing
   if (process.env.NODE_ENV === "development") return;
 
@@ -376,9 +373,9 @@ export const handleOpenNewIframe = async (req: Request, res: Response) => {
     const visitor = await Visitor.get(visitorId, urlSlug, { credentials });
 
     // Close any existing iframe first
-    await visitor.closeIframe(assetId).catch((error) =>
-      errorHandler({ error, functionName: "handleOpenNewIframe", message: "Error closing iframe" }),
-    );
+    await visitor
+      .closeIframe(assetId)
+      .catch((error) => errorHandler({ error, functionName: "handleOpenNewIframe", message: "Error closing iframe" }));
 
     // Open the new iframe
     await visitor.openIframe({
@@ -419,11 +416,13 @@ export const handleCompleteChallenge = async (req: Request, res: Response) => {
     );
 
     // 2. Show success toast (fire-and-forget)
-    visitor.fireToast({
-      groupId: "challenge",
-      title: "🎉 Challenge Complete!",
-      text: "You've successfully completed the challenge.",
-    }).catch((error) => console.error("Toast error:", error));
+    visitor
+      .fireToast({
+        groupId: "challenge",
+        title: "🎉 Challenge Complete!",
+        text: "You've successfully completed the challenge.",
+      })
+      .catch((error) => console.error("Toast error:", error));
 
     // 3. Close the iframe
     visitor.closeIframe(assetId).catch((error) => console.error("Close iframe error:", error));
@@ -451,24 +450,24 @@ When multiple visitor interactions can happen simultaneously:
 // All these can run in parallel
 await Promise.all([
   // Update data with analytics
-  visitor.updateDataObject(
-    { challengeCompleted: true },
-    { analytics: [{ analyticName: "completions" }] },
-  ),
+  visitor.updateDataObject({ challengeCompleted: true }, { analytics: [{ analyticName: "completions" }] }),
 
   // Toast notification
-  visitor.fireToast({
-    groupId: "challenge",
-    title: "Congratulations!",
-    text,
-  }).catch((error) => errorHandler({ error, functionName: "handleAnswer", message: "Toast error" })),
+  visitor
+    .fireToast({
+      groupId: "challenge",
+      title: "Congratulations!",
+      text,
+    })
+    .catch((error) => errorHandler({ error, functionName: "handleAnswer", message: "Toast error" })),
 
   // Trigger particle effect
-  world.triggerParticle({
-    name: "fireworks_1",
-    duration: 3,
-    position: droppedAsset.position,
-  }).catch((error) => errorHandler({ error, functionName: "handleAnswer", message: "Particle error" })),
+  visitor
+    .triggerParticle({
+      name: "fireworks_1",
+      duration: 3,
+    })
+    .catch((error) => errorHandler({ error, functionName: "handleAnswer", message: "Particle error" })),
 ]);
 ```
 
@@ -476,11 +475,11 @@ await Promise.all([
 
 ## SDK Method Reference
 
-| Method | Purpose | Fire-and-Forget? |
-|--------|---------|------------------|
-| `visitor.fireToast({ groupId, title, text })` | Display notification | Yes |
-| `visitor.moveVisitor({ x, y, shouldTeleportVisitor })` | Move/teleport visitor | No (await) |
-| `visitor.closeIframe(droppedAssetId)` | Close UI panel | Yes |
-| `visitor.openIframe({ droppedAssetId, link, shouldOpenInDrawer, title })` | Open UI panel | No (await) |
+| Method                                                                    | Purpose               | Fire-and-Forget? |
+| ------------------------------------------------------------------------- | --------------------- | ---------------- |
+| `visitor.fireToast({ groupId, title, text })`                             | Display notification  | Yes              |
+| `visitor.moveVisitor({ x, y, shouldTeleportVisitor })`                    | Move/teleport visitor | No (await)       |
+| `visitor.closeIframe(droppedAssetId)`                                     | Close UI panel        | Yes              |
+| `visitor.openIframe({ droppedAssetId, link, shouldOpenInDrawer, title })` | Open UI panel         | No (await)       |
 
 **Fire-and-Forget**: Use `.catch()` without `await` - errors logged but don't block execution.

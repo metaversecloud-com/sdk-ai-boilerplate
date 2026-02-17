@@ -134,14 +134,18 @@ WORKFLOW
 2. IMPLEMENT — minimal changes that satisfy constraints & tests.
 3. TEST — add/adjust Jest tests; ensure SDK mock coverage.
 4. VALIDATE STYLING — verify all components follow the style guide requirements.
-5. EXPLAIN — provide the Deliverable Format output.
+5. FINALIZE — after implementation is complete:
+   - Remove unused boilerplate code (utils, components, types) and update barrel exports.
+   - Rewrite README.md to describe the new app (not the boilerplate).
+   - Rewrite server/tests/routes.test.ts to test the new app's routes; update SDK mock.
+6. EXPLAIN — provide the Deliverable Format output.
 
-DEFINITION OF DONE (PLANT PICKER EXAMPLE)
+DEFINITION OF DONE
 
-- Home page shows 6 plant images.
-- Clicking a plant:
-  - Calls backend via existing backendAPI.ts (unchanged).
-  - Server creates a DroppedAsset using the clicked image URL per SDK patterns.
+- All features from plan.md are implemented and working.
 - Try/catch aligned with controllers/utils.
 - Jest tests cover new route(s) and assert SDK + credentials flow.
 - No changes to protected files; client/topiaInit.ts remains present.
+- Unused boilerplate code has been removed.
+- README.md describes the new app.
+- Server tests pass and cover the new routes.

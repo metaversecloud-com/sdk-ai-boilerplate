@@ -329,6 +329,58 @@ Add a collectibles/items system:
 | Activity Indicators | "Add world activity indicators (see sdk-ai-boilerplate examples/worldActivity.md)" |
 | Data Migration | "Add data migration (see sdk-ai-boilerplate examples/dataMigration.md)" |
 
+## Post-Implementation Finalization
+
+These prompts should be used AFTER the app is implemented to clean up boilerplate and prepare for release.
+
+### Initial Setup Prompt
+```
+Read through plan.md to see what to build, create an implementation plan, and ask questions before starting.
+```
+
+### Clean Up Unused Boilerplate
+```
+Clean up the boilerplate code by removing any unused utils, components, and types.
+Trace imports from controllers and pages to identify what's actually used.
+Remove unused files and update barrel exports (index.ts files).
+Do NOT remove protected files (PageContainer.tsx, backendAPI.ts, etc.).
+```
+
+### Update README
+```
+Update the README to reflect the new app. Include:
+- App name and description
+- What visitors see vs. what admins see
+- Key features
+- API endpoints with request/response shapes
+- Data object schemas
+- Setup and development instructions
+```
+
+### Update Server Tests
+```
+Update server/tests/routes.test.ts so that it actually tests the new app's routes.
+Update the SDK mock (server/mocks/@rtsdk/topia.ts) to include any new factories or methods.
+Update the jest.mock("../utils/index.js") block to mock the new utils.
+Add tests for each route: success, errors, auth checks, and input validation.
+Remove tests for removed boilerplate routes.
+```
+
+### Commit and Open PR
+```
+Commit and push all changes to the dev branch, then open a PR from dev into main
+with labels "release" and "major".
+```
+
+### All-in-One Finalization
+```
+Now that the app is implemented, please finalize it:
+1. Remove all unused boilerplate code (utils, components, types) and update barrel exports
+2. Update the README to describe the new app
+3. Update server/tests/routes.test.ts to test the new routes (update mocks too)
+4. Commit, push to dev, and open a PR into main with labels "release" and "major"
+```
+
 ## Tips for Best Results
 
 1. **Reference the example**: Always mention "see sdk-ai-boilerplate examples/[filename].md" so Claude knows which pattern to follow

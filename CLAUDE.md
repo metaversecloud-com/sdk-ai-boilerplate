@@ -259,7 +259,14 @@ INSTANCE_PROTOCOL=https
 
 4. **VALIDATE STYLING** - Verify components follow style guide
 
-5. **EXPLAIN** - Provide deliverable format output
+5. **FINALIZE** - After implementation is complete:
+
+   - Remove unused boilerplate code (utils, components, types) and update barrel exports
+   - Rewrite `README.md` to describe the new app (not the boilerplate)
+   - Rewrite `server/tests/routes.test.ts` to test the new app's routes; update SDK mock
+   - See `.ai/templates/plan.md` section 9 for detailed finalization checklist
+
+6. **EXPLAIN** - Provide deliverable format output
 
 ## Deliverable Format
 

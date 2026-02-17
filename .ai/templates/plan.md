@@ -29,7 +29,7 @@ All client-side components MUST follow the comprehensive styling guide in `.ai/s
 
 Key requirements:
 
-- Use SDK CSS classes for all UI elements
+- Use SDK CSS classes for all UI elements, avoid inline styles wherever possible
 - Follow the component structure pattern in examples
 - Use aliased imports and proper error handling
 - Validate styling before submitting implementation
@@ -155,3 +155,44 @@ Before submitting the implementation, verify:
 - [ ] Component structure follows the pattern in `.ai/examples/page.md`
 - [ ] All API endpoints follow the established pattern and error handling
 - [ ] Tests are included for all new functionality
+
+## 9. Post-Implementation Finalization
+
+After the app is implemented, these steps MUST be completed before the app is considered done:
+
+### 9a. Remove Unused Boilerplate Code
+
+The boilerplate ships with example utilities, components, and types that may not be used by the new app. Scan for and remove:
+
+- **Server utils**: Check `server/utils/` for unused files (e.g., `droppedAssets/`, `getBaseUrl.ts`). Trace imports from controllers — if a util is not imported anywhere, remove it.
+- **Server types**: Check `server/types/` for unused type files (e.g., `DroppedAssetTypes.ts`). Remove types that are no longer referenced.
+- **Client components**: Check `client/src/components/` for unused boilerplate components (e.g., `Accordion.tsx`, `AdminView.tsx`, `AdminIconButton.tsx`, `ConfirmationModal.tsx`, `PageFooter.tsx`). Trace imports from pages — if a component is not imported anywhere, remove it.
+- **Barrel exports**: Update `server/utils/index.ts`, `server/types/index.ts`, and `client/src/components/index.ts` to remove exports of deleted files.
+
+**Protected files** (`PageContainer.tsx`, `backendAPI.ts`, etc.) must NOT be removed even if they appear unused — they are part of the framework.
+
+### 9b. Update README
+
+Rewrite `README.md` to describe the new app instead of the boilerplate. Include:
+
+- App name and description
+- What visitors see vs. what admins see
+- Key features
+- API endpoints with request/response shapes
+- Data object schemas
+- Setup and development instructions
+
+### 9c. Update Server Tests
+
+Rewrite `server/tests/routes.test.ts` to test the new app's actual routes:
+
+- Update the `jest.mock("../utils/index.js")` block to mock the new app's utils (not boilerplate ones like `getDroppedAsset`)
+- Update `server/mocks/@rtsdk/topia.ts` to include any new SDK factories/methods used (e.g., `EcosystemFactory`, `WorldActivityFactory`)
+- Add test cases for each route covering: success paths, error handling, authorization checks, input validation
+- Remove any tests for removed boilerplate routes
+
+### 9d. Commit, Push, and Open PR
+
+- Commit all changes to the `dev` branch
+- Push to remote
+- Open a PR from `dev` into `main` with appropriate labels
