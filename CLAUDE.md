@@ -50,6 +50,17 @@ This document provides Claude-specific guidelines for working with this Topia SD
 
 #### Data Objects Pattern
 
+#### User.create and profileId
+
+`User.create` requires `profileId` in the credentials:
+
+- **Self** (user acting on their own behalf): `profileId` is already in credentials from `req.query` — use `User.create({ credentials })`
+- **Cross-user** (acting on another user, e.g., admin awarding a badge): override `profileId` — use `User.create({ credentials: { ...credentials, profileId: recipientProfileId } })`
+
+See `.ai/examples/awardBadge.md` for a full example.
+
+#### Data Objects
+
 World/Visitor/User/DroppedAsset classes provide these methods:
 
 - `fetchDataObject` - Get current data

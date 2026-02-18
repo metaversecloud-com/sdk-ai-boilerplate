@@ -183,30 +183,41 @@ const getBadges = async (credentials: Credentials) => {
 };
 ```
 
-### Award a Badge to a Visitor
+### Award a Badge to a Visitor (Self)
 
 ```ts
 import { getCachedInventoryItems } from "../utils/index.js";
+import { User } from "./topiaInit.js";
 
 export const awardBadge = async ({ badgeName, credentials }: { badgeName: string; credentials: Credentials }) => {
-  const { urlSlug, visitorId } = credentials;
-
   // Get all inventory items from cache
   const items = await getCachedInventoryItems({ credentials });
 
   // Find the specific badge
   const badge = items.find((item) => item.name === badgeName && item.type === "BADGE");
+  if (!badge) throw new Error(`Badge "${badgeName}" not found in ecosystem inventory`);
 
-  if (!badge) {
-    throw new Error(`Badge "${badgeName}" not found in ecosystem inventory`);
-  }
-
-  // Get visitor and grant the badge
-  const visitor = await Visitor.get(visitorId, urlSlug, { credentials });
-  await visitor.grantInventoryItem(badge, 1);
+  // profileId is already in credentials from req.query
+  const user = await User.create({ credentials });
+  await user.grantInventoryItem(badge, 1);
 
   return { success: true, badge };
 };
+```
+
+### Award a Badge to Another User (Cross-User)
+
+When one user awards a badge to a different user, override `profileId` in credentials with the recipient's. See `.ai/examples/awardBadge.md` for a full example.
+
+```ts
+import { getCachedInventoryItems } from "../utils/index.js";
+import { User } from "./topiaInit.js";
+
+// recipientProfileId is passed as a parameter (e.g., from req.body)
+const recipientUser = await User.create({
+  credentials: { ...credentials, profileId: recipientProfileId },
+});
+await recipientUser.grantInventoryItem(badge, 1);
 ```
 
 ### Use in a Controller (Server)

@@ -1,4 +1,18 @@
-Use the SDK's Visitor controller to grant inventory items (badges) and display toast notifications
+Use the SDK to grant inventory items (badges) and display toast notifications.
+
+**Important — `User.create` requires `profileId`**: When a user acts on their own behalf, `profileId` is already in the credentials from `req.query`. When a user triggers an action that impacts another user (e.g., an admin awarding a badge to a visitor), you must override `profileId` with the recipient's profile ID:
+
+```ts
+// Self — profileId comes from req.query credentials automatically
+const user = await User.create({ credentials });
+
+// Cross-user — override profileId with the recipient's
+const recipientUser = await User.create({
+  credentials: { ...credentials, profileId: recipientProfileId },
+});
+```
+
+## Visitor Earning Their Own Badge
 
 ```ts
 /**
@@ -49,6 +63,62 @@ export const awardBadge = async ({
     return { success: true };
   } catch (error: any) {
     return standardizeError(error);
+  }
+};
+```
+
+## Admin Awarding a Badge to Another User
+
+When one user (e.g., an admin) awards a badge to a different user, use `User.create` with the recipient's `profileId` overriding the credentials. The admin's `profileId` is in `req.query` credentials; the recipient's `profileId` must be passed as a parameter.
+
+```ts
+import { Credentials } from "../types/index.js";
+import { getCachedInventoryItems, standardizeError } from "../utils/index.js";
+import { User, Visitor } from "./topiaInit.js";
+
+export const awardBadgeToVisitor = async ({
+  credentials,
+  recipientVisitorId,
+  recipientProfileId,
+  badgeName,
+  comment,
+}: {
+  credentials: Credentials;
+  recipientVisitorId: number;
+  recipientProfileId: string;
+  badgeName: string;
+  comment?: string;
+}) => {
+  try {
+    const { urlSlug } = credentials;
+
+    const inventoryItems = await getCachedInventoryItems({ credentials });
+    const inventoryItem = inventoryItems?.find((item) => item.name === badgeName && item.type === "BADGE");
+    if (!inventoryItem) throw new Error(`Badge "${badgeName}" not found in ecosystem inventory`);
+
+    // User.create with recipient's profileId (cross-user action)
+    const recipientUser = await User.create({
+      credentials: { ...credentials, profileId: recipientProfileId },
+    });
+
+    // Visitor for toast/particle effects
+    const recipientVisitor = await Visitor.create(recipientVisitorId, urlSlug, { credentials });
+
+    // Grant the badge via User (not Visitor)
+    await recipientUser.grantInventoryItem(inventoryItem, 1);
+
+    // Fire-and-forget: toast notification
+    recipientVisitor
+      .fireToast({
+        groupId: "badges",
+        title: `You unlocked the ${badgeName} badge!`,
+        text: comment || "",
+      })
+      .catch(() => console.error(`Failed to fire toast for ${badgeName} badge`));
+
+    return { success: true };
+  } catch (error: any) {
+    throw standardizeError(error);
   }
 };
 ```

@@ -35,6 +35,10 @@ SDK USAGE POLICY
 - Wrap SDK calls in try/catch and either:
   - return JSON `{ success: boolean, ... }`, or
   - throw and let server/errorHandler.ts handle it (follow existing controllers' pattern).
+- User.create requires `profileId` in credentials.
+  - Self (user acting on their own behalf): `profileId` is already in the credentials from `req.query` — use `User.create({ credentials })`.
+  - Cross-user (user triggering an action on another user, e.g., admin awarding a badge): override `profileId` with the target user's — use `User.create({ credentials: { ...credentials, profileId: recipientProfileId } })`.
+  - See `.ai/examples/awardBadge.md` for a full example.
 - Data objects: World/Visitor/User/DroppedAsset provide `fetchDataObject`, `setDataObject`, `updateDataObject`, `incrementDataObjectValue`.
   - Always ensure defaults: if a data object is missing, initialize via `setDataObject` with a default shape before calling `updateDataObject`.
   - Follow the pattern: `handleGetGameState.ts` → `getDroppedAsset` → `initializeDroppedAssetDataObject`. If defaults are unclear, STOP and ask.
