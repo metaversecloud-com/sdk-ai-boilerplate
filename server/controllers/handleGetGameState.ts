@@ -19,7 +19,7 @@ export const handleGetGameState = async (req: Request, res: Response) => {
       }),
     );
 
-    const visitor: VisitorInterface = await Visitor.get(visitorId, urlSlug, { credentials });
+    const { visitor } = await getVisitor(credentials, true);
     const { isAdmin } = visitor;
 
     try {
