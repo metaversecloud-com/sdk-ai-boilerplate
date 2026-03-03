@@ -31,6 +31,37 @@ Add functionality to award a badge to a visitor (see sdk-ai-boilerplate examples
 4. Show toast notification
 ```
 
+## Experience Points
+
+### Add XP System
+```
+Add an Experience Points system to this app (see sdk-ai-boilerplate examples/experiencePoints.md):
+1. Ensure inventoryCache.ts exists (see examples/inventoryCache.md)
+2. Create grantXp utility to increment the "Experience Points" inventory item
+3. Create getVisitorXp utility to read XP from visitor inventory
+4. Create shared XP config with action values and level thresholds
+5. Filter "Experience Points" from any game item lookups or bag builders
+6. Call grantXp in each controller that awards XP
+7. Return xp and level in the game state response
+```
+
+### Add XP Granting to a Controller
+```
+Add XP granting to this controller (see sdk-ai-boilerplate examples/experiencePoints.md):
+1. Import grantXp from utils
+2. Calculate xpEarned based on the action
+3. Call await grantXp(visitor, credentials, xpEarned) after the action
+4. Return xpEarned in the response
+```
+
+### Read XP from Inventory
+```
+Update the game state endpoint to read XP from inventory (see sdk-ai-boilerplate examples/experiencePoints.md):
+1. After visitor.fetchInventoryItems(), call getVisitorXp(allItems)
+2. Derive level using getLevelForXp(xp) from shared config
+3. Return xp and level in the response instead of reading from data objects
+```
+
 ## Assets
 
 ### Drop Assets into World
@@ -314,6 +345,7 @@ Add a collectibles/items system:
 | Badges | "Add badges system (see sdk-ai-boilerplate examples/badges.md)" |
 | Inventory Cache | "Add cached inventory (see sdk-ai-boilerplate examples/inventoryCache.md)" |
 | Award Badge | "Add badge awarding (see sdk-ai-boilerplate examples/awardBadge.md)" |
+| Experience Points | "Add XP system (see sdk-ai-boilerplate examples/experiencePoints.md)" |
 | Drop Asset | "Add asset dropping (see sdk-ai-boilerplate examples/handleDropAssets.md)" |
 | Remove Asset | "Add asset removal with effects (see sdk-ai-boilerplate examples/handleRemoveDroppedAsset.md)" |
 | Configuration | "Add config endpoint (see sdk-ai-boilerplate examples/handleGetConfiguration.md)" |

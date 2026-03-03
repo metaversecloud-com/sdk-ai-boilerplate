@@ -9,6 +9,7 @@ This folder contains guidelines and examples for AI assistants working with Topi
 | **Set up a new app** | `guides/getting-started.md` |
 | **Build a multiplayer game** | `examples/multiplayerTurnBased.md`, `examples/lockingPatterns.md` |
 | **Add badges/rewards** | `examples/badges.md`, `examples/awardBadge.md` |
+| **Add XP / leveling** | `examples/experiencePoints.md` |
 | **Manage assets** | `examples/handleDropAssets.md`, `examples/handleRemoveDroppedAsset.md` |
 | **Add visitor interactions** | `examples/visitorInteractions.md` |
 | **Add visual effects** | `examples/worldActivity.md` |
@@ -55,6 +56,7 @@ This folder contains guidelines and examples for AI assistants working with Topi
 |------|-------------|
 | `examples/awardBadge.md` | Grant inventory items (badges) with toast notifications |
 | `examples/badges.md` | Complete badges system: ecosystem cache, visitor inventory, UI display |
+| `examples/experiencePoints.md` | Grant, read, and display XP via inventory item |
 | `examples/inventoryCache.md` | Cache ecosystem inventory items with 24h TTL |
 
 ### Asset Management

@@ -39,6 +39,7 @@ SDK USAGE POLICY
   - Self (user acting on their own behalf): `profileId` is already in the credentials from `req.query` — use `User.create({ credentials })`.
   - Cross-user (user triggering an action on another user, e.g., admin awarding a badge): override `profileId` with the target user's — use `User.create({ credentials: { ...credentials, profileId: recipientProfileId } })`.
   - See `.ai/examples/awardBadge.md` for a full example.
+- **Inventory & Experience Points**: When prompted to add an inventory system and Experience Points are not explicitly mentioned, ask if the "Experience Points" ecosystem item should be integrated. XP should always be stored as an inventory item quantity — never in data objects. See `.ai/examples/experiencePoints.md`.
 - Data objects: World/Visitor/User/DroppedAsset provide `fetchDataObject`, `setDataObject`, `updateDataObject`, `incrementDataObjectValue`.
   - Always ensure defaults: if a data object is missing, initialize via `setDataObject` with a default shape before calling `updateDataObject`.
   - Follow the pattern: `handleGetGameState.ts` → `getDroppedAsset` → `initializeDroppedAssetDataObject`. If defaults are unclear, STOP and ask.
