@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { errorHandler, getCredentials, getDroppedAsset, Visitor, World } from "../utils/index.js";
+import { errorHandler, getCredentials, getDroppedAsset, Visitor, World } from "@utils/index.js";
 import { VisitorInterface } from "@rtsdk/topia";
 import axios from "axios";
 

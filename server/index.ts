@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import router from "./routes.js";
 import path from "path";
-import { cleanReturnPayload } from "./utils/cleanReturnPayload.js";
+import { cleanReturnPayload } from "@utils/cleanReturnPayload.js";
 import { fileURLToPath } from "url";
 
 dotenv.config({ path: "../.env" });

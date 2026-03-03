@@ -26,7 +26,7 @@ jest.mock("axios");
 const mockedAxios = jest.mocked(axios);
 
 // Mock the utils
-jest.mock("../utils/index.js", () => ({
+jest.mock("@utils/index.js", () => ({
   errorHandler: jest.fn(),
   getCredentials: jest.fn(),
   getDroppedAsset: jest.fn(),
@@ -38,7 +38,7 @@ jest.mock("../utils/index.js", () => ({
   },
 }));
 
-const mockUtils = jest.mocked(require("../utils/index.js"));
+const mockUtils = jest.mocked(require("@utils/index.js"));
 
 describe("routes", () => {
   beforeEach(() => {

@@ -1,6 +1,6 @@
 import express from "express";
 import { handleGetGameState } from "./controllers/index.js";
-import { getVersion } from "./utils/getVersion.js";
+import { getVersion } from "@utils/getVersion.js";
 
 const router = express.Router();
 const SERVER_START_DATE = new Date();
