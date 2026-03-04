@@ -61,9 +61,7 @@ After calling `visitor.fetchInventoryItems()`, extract XP from the already-fetch
  * Call visitor.fetchInventoryItems() before using this function.
  */
 export const getVisitorXp = (allItems: any[]): number => {
-  const xpItem = allItems.find(
-    (item: any) => item.item?.name === "Experience Points" && item.status === "ACTIVE",
-  );
+  const xpItem = allItems.find((item: any) => item.item?.name === "Experience Points" && item.status === "ACTIVE");
   return xpItem?.quantity ?? xpItem?.availableQuantity ?? 0;
 };
 ```
@@ -90,15 +88,9 @@ import { getCachedInventoryItems } from "./inventoryCache.js";
  * Grant XP to a visitor via the "Experience Points" inventory item.
  * Returns the new total XP quantity.
  */
-export const grantXp = async (
-  visitor: any,
-  credentials: Credentials,
-  amount: number,
-): Promise<number> => {
+export const grantXp = async (visitor: any, credentials: Credentials, amount: number): Promise<number> => {
   const items = await getCachedInventoryItems({ credentials });
-  const xpItem = items.find(
-    (item) => item.name === "Experience Points" && item.status === "ACTIVE",
-  );
+  const xpItem = items.find((item) => item.name === "Experience Points" && item.status === "ACTIVE");
 
   if (!xpItem) {
     console.warn("Experience Points item not found in ecosystem");
@@ -205,22 +197,22 @@ export function getLevelForXp(xp: number): number {
 
 ## Key Principles
 
-| Principle | Detail |
-|-----------|--------|
-| **Inventory is source of truth** | Never store `totalXp` or `level` in data objects. Always read from inventory. |
-| **Filter from game items** | Exclude "Experience Points" from any item list, bag builder, or food lookup. |
-| **Use ecosystem cache** | Look up the XP item via `getCachedInventoryItems`, not per-request API calls. |
-| **Grant, don't set** | Use `modifyInventoryItemQuantity(item, amount)` to increment. Never set absolute values. |
-| **Derive level** | Compute `level` from XP using `getLevelForXp()` — never store it separately. |
+| Principle                        | Detail                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Inventory is source of truth** | Never store `totalXp` or `level` in data objects. Always read from inventory.            |
+| **Filter from game items**       | Exclude "Experience Points" from any item list, bag builder, or food lookup.             |
+| **Use ecosystem cache**          | Look up the XP item via `getCachedInventoryItems`, not per-request API calls.            |
+| **Grant, don't set**             | Use `modifyInventoryItemQuantity(item, amount)` to increment. Never set absolute values. |
+| **Derive level**                 | Compute `level` from XP using `getLevelForXp()` — never store it separately.             |
 
 ## File Summary
 
-| File | Purpose |
-|------|---------|
-| `server/utils/inventory.ts` | `grantXp`, `getVisitorXp` utilities |
-| `server/utils/inventoryCache.ts` | Cached ecosystem inventory (find XP item) |
-| `shared/data/xpConfig.ts` | XP action values, level thresholds, `getLevelForXp` |
-| `server/controllers/*.ts` | Call `grantXp` after calculating earned XP |
+| File                             | Purpose                                             |
+| -------------------------------- | --------------------------------------------------- |
+| `server/utils/inventory.ts`      | `grantXp`, `getVisitorXp` utilities                 |
+| `server/utils/inventoryCache.ts` | Cached ecosystem inventory (find XP item)           |
+| `shared/data/xpConfig.ts`        | XP action values, level thresholds, `getLevelForXp` |
+| `server/controllers/*.ts`        | Call `grantXp` after calculating earned XP          |
 
 ## Related Examples
 

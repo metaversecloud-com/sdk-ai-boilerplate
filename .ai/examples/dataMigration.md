@@ -79,11 +79,7 @@ export const getVisitorProgress = async (visitor: any, credentials: Credentials)
 ### Pattern: Migrate During Update
 
 ```ts
-export const updateVisitorProgress = async (
-  visitor: any,
-  credentials: Credentials,
-  updates: Partial<ProgressData>,
-) => {
+export const updateVisitorProgress = async (visitor: any, credentials: Credentials, updates: Partial<ProgressData>) => {
   const { urlSlug, sceneDropId } = credentials;
   await visitor.fetchDataObject();
 
@@ -101,7 +97,7 @@ export const updateVisitorProgress = async (
       {
         ...dataObject,
         [newKey]: { ...currentData, ...updates },
-        [oldKey]: undefined,  // Remove old key
+        [oldKey]: undefined, // Remove old key
       },
       { lock: { lockId, releaseLock: true } },
     );
@@ -152,9 +148,9 @@ type OldLeaderboardEntry = {
   time: number;
 };
 
-export const migrateLeaderboard = (
-  leaderboard: { [profileId: string]: OldLeaderboardEntry | string },
-): { [profileId: string]: string } => {
+export const migrateLeaderboard = (leaderboard: {
+  [profileId: string]: OldLeaderboardEntry | string;
+}): { [profileId: string]: string } => {
   const migrated: { [profileId: string]: string } = {};
 
   for (const [profileId, entry] of Object.entries(leaderboard)) {
@@ -179,9 +175,7 @@ export const handleGetLeaderboard = async (req: Request, res: Response) => {
     let { leaderboard } = keyAsset.dataObject;
 
     // Check if migration is needed (any entry is an object)
-    const needsMigration = Object.values(leaderboard || {}).some(
-      (entry) => typeof entry === "object",
-    );
+    const needsMigration = Object.values(leaderboard || {}).some((entry) => typeof entry === "object");
 
     if (needsMigration) {
       leaderboard = migrateLeaderboard(leaderboard);
@@ -286,11 +280,7 @@ export const getPlayerData = (dataObject: any, profileId: string) => {
 ### Writing to New Format Only
 
 ```ts
-export const updatePlayerData = async (
-  droppedAsset: any,
-  profileId: string,
-  updates: Partial<PlayerData>,
-) => {
+export const updatePlayerData = async (droppedAsset: any, profileId: string, updates: Partial<PlayerData>) => {
   // Always write to new format
   await droppedAsset.updateDataObject({
     [`players.${profileId}`]: updates,
@@ -306,10 +296,7 @@ Migrate data only when accessed, not all at once:
 
 ```ts
 // server/utils/lazyMigrate.ts
-export const lazyMigrateVisitor = async (
-  visitor: any,
-  credentials: Credentials,
-): Promise<VisitorData> => {
+export const lazyMigrateVisitor = async (visitor: any, credentials: Credentials): Promise<VisitorData> => {
   await visitor.fetchDataObject();
   const dataObject = visitor.dataObject || {};
 
@@ -494,9 +481,9 @@ await entity.setDataObject(migratedData, {
 ```ts
 // Don't lose data you don't recognize
 const migratedData = {
-  ...existingData,  // Keep everything
-  newField: value,  // Add new
-  oldField: undefined,  // Remove old
+  ...existingData, // Keep everything
+  newField: value, // Add new
+  oldField: undefined, // Remove old
 };
 ```
 
@@ -550,12 +537,12 @@ export const migrateAllVisitors = async () => {
 
 ## Summary
 
-| Pattern | When to Use |
-|---------|-------------|
-| Key Rename | Changing field names |
-| Format Conversion | Changing data structure (array <-> object) |
-| Default Values | Adding new optional fields |
-| Initialize Missing | Adding new required fields |
-| Backward Compatibility | Supporting old clients during transition |
-| Lazy Migration | Gradual migration as users access data |
-| Version-Based | Complex multi-step migrations |
+| Pattern                | When to Use                                |
+| ---------------------- | ------------------------------------------ |
+| Key Rename             | Changing field names                       |
+| Format Conversion      | Changing data structure (array <-> object) |
+| Default Values         | Adding new optional fields                 |
+| Initialize Missing     | Adding new required fields                 |
+| Backward Compatibility | Supporting old clients during transition   |
+| Lazy Migration         | Gradual migration as users access data     |
+| Version-Based          | Complex multi-step migrations              |

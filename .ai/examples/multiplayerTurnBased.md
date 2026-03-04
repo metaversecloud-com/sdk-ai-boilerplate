@@ -36,19 +36,19 @@ export type GameDataType = {
   playerCount: number;
 
   // Turn management
-  lastPlayerTurn: number | null;  // visitorId of last player who moved
+  lastPlayerTurn: number | null; // visitorId of last player who moved
   turnCount: number;
 
   // Game state
   isGameOver: boolean;
   isResetInProgress: boolean;
-  winner: number | null;  // visitorId of winner
+  winner: number | null; // visitorId of winner
 
   // Game-specific state (examples)
-  board?: any;              // Board state
-  claimedCells?: object;    // Tic-tac-toe cells
-  columns?: number[][];     // Connect 4 columns
-  moveHistory?: string[];   // Chess moves
+  board?: any; // Board state
+  claimedCells?: object; // Tic-tac-toe cells
+  columns?: number[][]; // Connect 4 columns
+  moveHistory?: string[]; // Chess moves
 
   // Timestamps
   lastInteraction: Date;
@@ -166,11 +166,13 @@ export const handlePlayerSelection = async (req: Request, res: Response) => {
 
     // Notify the player
     const visitor = await Visitor.get(visitorId, urlSlug, { credentials });
-    visitor.fireToast({
-      groupId: "game",
-      title: shouldUpdateGame ? "Joined!" : "Notice",
-      text,
-    }).catch(() => {});
+    visitor
+      .fireToast({
+        groupId: "game",
+        title: shouldUpdateGame ? "Joined!" : "Notice",
+        text,
+      })
+      .catch(() => {});
 
     return res.json({ success: true, message: text });
   } catch (error) {
@@ -222,16 +224,8 @@ export const handleMakeMove = async (req: Request, res: Response) => {
     const { move } = req.body;
 
     const { keyAsset } = await getDroppedAssetDataObject(credentials);
-    const {
-      player1,
-      player2,
-      lastPlayerTurn,
-      turnCount,
-      isGameOver,
-      isResetInProgress,
-      keyAssetId,
-      resetCount,
-    } = keyAsset.dataObject;
+    const { player1, player2, lastPlayerTurn, turnCount, isGameOver, isResetInProgress, keyAssetId, resetCount } =
+      keyAsset.dataObject;
 
     let text = "";
     let shouldUpdateGame = false;
@@ -374,11 +368,7 @@ export const getGameStatus = (claimedCells: { [key: number]: number }): GameStat
   // Check each winning combination
   for (const combo of winningCombos) {
     const [a, b, c] = combo;
-    if (
-      claimedCells[a] &&
-      claimedCells[a] === claimedCells[b] &&
-      claimedCells[b] === claimedCells[c]
-    ) {
+    if (claimedCells[a] && claimedCells[a] === claimedCells[b] && claimedCells[b] === claimedCells[c]) {
       return {
         hasWinningCombo: true,
         winningCombo: combo,
@@ -419,10 +409,10 @@ export const checkConnect4Win = (columns: number[][], playerId: number): boolean
 
   // Check horizontal, vertical, and diagonal
   const directions = [
-    [0, 1],   // Horizontal
-    [1, 0],   // Vertical
-    [1, 1],   // Diagonal down-right
-    [1, -1],  // Diagonal down-left
+    [0, 1], // Horizontal
+    [1, 0], // Vertical
+    [1, 1], // Diagonal down-right
+    [1, -1], // Diagonal down-left
   ];
 
   for (let row = 0; row < ROWS; row++) {
@@ -434,11 +424,7 @@ export const checkConnect4Win = (columns: number[][], playerId: number): boolean
         for (let i = 1; i < 4; i++) {
           const newRow = row + dr * i;
           const newCol = col + dc * i;
-          if (
-            newRow >= 0 && newRow < ROWS &&
-            newCol >= 0 && newCol < COLS &&
-            board[newRow][newCol] === playerId
-          ) {
+          if (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS && board[newRow][newCol] === playerId) {
             count++;
           } else {
             break;
@@ -538,11 +524,13 @@ export const handleResetGame = async (req: Request, res: Response) => {
     );
 
     // Notify via toast
-    visitor.fireToast({
-      groupId: "game",
-      title: "Game Reset",
-      text: "The game has been reset. Find a new opponent!",
-    }).catch(() => {});
+    visitor
+      .fireToast({
+        groupId: "game",
+        title: "Game Reset",
+        text: "The game has been reset. Find a new opponent!",
+      })
+      .catch(() => {});
 
     return res.json({ success: true });
   } catch (error) {
@@ -719,13 +707,13 @@ router.post("/reset", handleResetGame);
 
 ## Key Patterns Summary
 
-| Pattern | Purpose |
-|---------|---------|
-| `lastPlayerTurn` | Track whose turn it is |
-| `turnCount` | Create unique lock IDs per turn |
-| `resetCount` | Invalidate old locks after reset |
-| `playerCount` | Track if game is ready (needs 2) |
-| `isGameOver` | Prevent moves after game ends |
-| `isResetInProgress` | Prevent moves during reset |
-| Time-based locks | Prevent concurrent move conflicts |
-| Analytics on win/draw | Track game completions |
+| Pattern               | Purpose                           |
+| --------------------- | --------------------------------- |
+| `lastPlayerTurn`      | Track whose turn it is            |
+| `turnCount`           | Create unique lock IDs per turn   |
+| `resetCount`          | Invalidate old locks after reset  |
+| `playerCount`         | Track if game is ready (needs 2)  |
+| `isGameOver`          | Prevent moves after game ends     |
+| `isResetInProgress`   | Prevent moves during reset        |
+| Time-based locks      | Prevent concurrent move conflicts |
+| Analytics on win/draw | Track game completions            |

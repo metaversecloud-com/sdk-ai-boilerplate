@@ -6,7 +6,7 @@ export const getCredentials = (query: any): Credentials => {
     const requiredFields = ["interactiveNonce", "interactivePublicKey", "urlSlug", "visitorId"];
     const missingFields = requiredFields.filter((variable) => !query[variable]);
     if (missingFields.length > 0) {
-      throw `Missing required body parameters: ${missingFields.join(", ")}`;
+      throw `Missing required parameters: ${missingFields.join(", ")}`;
     }
 
     if (process.env.INTERACTIVE_KEY !== query.interactivePublicKey) {

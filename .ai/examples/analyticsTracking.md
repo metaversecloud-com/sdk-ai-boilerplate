@@ -28,7 +28,7 @@ await entity.updateDataObject(
         analyticName: "eventName",    // Name of the event
         profileId,                     // User's profile ID
         urlSlug,                       // World identifier
-        uniqueKey: profileId,          // Deduplication key
+        uniqueKey: profileId,          // Key used for tracking unique events (i.e. "eventName" per profileId)
         incrementBy?: number,          // Optional: for counters
       },
     ],
@@ -38,13 +38,13 @@ await entity.updateDataObject(
 
 ### Analytics Options
 
-| Option | Type | Required | Description |
-|--------|------|----------|-------------|
-| `analyticName` | string | Yes | Name of the event (e.g., "starts", "completions") |
-| `profileId` | string | No | User's profile ID for attribution |
-| `urlSlug` | string | No | World slug for world-level analytics |
-| `uniqueKey` | string | No | Deduplication key to prevent duplicate counts |
-| `incrementBy` | number | No | Amount to increment (for counter analytics) |
+| Option         | Type   | Required | Description                                       |
+| -------------- | ------ | -------- | ------------------------------------------------- |
+| `analyticName` | string | Yes      | Name of the event (e.g., "starts", "completions") |
+| `profileId`    | string | No       | User's profile ID for attribution                 |
+| `urlSlug`      | string | No       | World slug for world-level analytics              |
+| `uniqueKey`    | string | No       | Deduplication key to prevent duplicate counts     |
+| `incrementBy`  | number | No       | Amount to increment (for counter analytics)       |
 
 ---
 
@@ -72,7 +72,7 @@ export const handleStartGame = async (req: Request, res: Response) => {
             analyticName: "starts",
             profileId,
             urlSlug,
-            uniqueKey: profileId,  // One "start" per user
+            uniqueKey: profileId, // One "start" per user
           },
         ],
       },
@@ -134,14 +134,14 @@ You can track analytics without modifying the data object by passing an empty ob
 ```ts
 // Track analytics only - no data changes
 await visitor.updateDataObject(
-  {},  // Empty object - no data changes
+  {}, // Empty object - no data changes
   {
     analytics: [
       {
         analyticName: "pageViews",
         profileId,
         urlSlug,
-        uniqueKey: `${profileId}-${Date.now()}`,  // Allow multiple views
+        uniqueKey: `${profileId}-${Date.now()}`, // Allow multiple views
       },
     ],
   },
@@ -192,16 +192,16 @@ export const handleGetGameState = async (req: Request, res: Response) => {
 
 ### Standard Event Names
 
-| Event | When to Track | Unique Key Pattern |
-|-------|---------------|-------------------|
-| `starts` | User begins activity | `profileId` |
-| `completions` | User finishes activity | `profileId` |
-| `wins` | User wins a game | `profileId` |
-| `clicks` | User clicks/interacts | `${profileId}-${timestamp}` |
-| `views` | User views content | `${profileId}-view` |
-| `teleports` | User teleports | `${profileId}` |
-| `itemsCollected` | User collects item | `${profileId}-${itemId}` |
-| `badgesAwarded` | User earns badge | `${profileId}-${badgeId}` |
+| Event            | When to Track          | Unique Key Pattern          |
+| ---------------- | ---------------------- | --------------------------- |
+| `starts`         | User begins activity   | `profileId`                 |
+| `completions`    | User finishes activity | `profileId`                 |
+| `wins`           | User wins a game       | `profileId`                 |
+| `clicks`         | User clicks/interacts  | `${profileId}-${timestamp}` |
+| `views`          | User views content     | `${profileId}-view`         |
+| `teleports`      | User teleports         | `${profileId}`              |
+| `itemsCollected` | User collects item     | `${profileId}-${itemId}`    |
+| `badgesAwarded`  | User earns badge       | `${profileId}-${badgeId}`   |
 
 ### Game-Specific Events
 
@@ -246,7 +246,7 @@ await visitor.updateDataObject(
         analyticName: "itemsCollected",
         profileId,
         urlSlug,
-        uniqueKey: `${profileId}-${itemId}`,  // One per item per user
+        uniqueKey: `${profileId}-${itemId}`, // One per item per user
       },
     ],
   },
@@ -258,9 +258,7 @@ if (isQuestComplete) {
   await visitor.updateDataObject(
     { questComplete: true, completedAt: new Date().toISOString() },
     {
-      analytics: [
-        { analyticName: "completions", profileId, urlSlug, uniqueKey: profileId },
-      ],
+      analytics: [{ analyticName: "completions", profileId, urlSlug, uniqueKey: profileId }],
     },
   );
 }
@@ -276,26 +274,26 @@ The `uniqueKey` prevents duplicate analytics. Choose the pattern based on your n
 
 ```ts
 // User can only "complete" once
-uniqueKey: profileId
+uniqueKey: profileId;
 
 // User can only collect each item once
-uniqueKey: `${profileId}-${itemId}`
+uniqueKey: `${profileId}-${itemId}`;
 
 // User can only earn each badge once
-uniqueKey: `${profileId}-${badgeName}`
+uniqueKey: `${profileId}-${badgeName}`;
 ```
 
 ### Multiple Events Per User
 
 ```ts
 // Track every click (timestamp makes each unique)
-uniqueKey: `${profileId}-${Date.now()}`
+uniqueKey: `${profileId}-${Date.now()}`;
 
 // Track daily activity (one per day)
-uniqueKey: `${profileId}-${new Date().toISOString().split('T')[0]}`
+uniqueKey: `${profileId}-${new Date().toISOString().split("T")[0]}`;
 
 // Track per-session activity
-uniqueKey: `${profileId}-${sessionId}`
+uniqueKey: `${profileId}-${sessionId}`;
 ```
 
 ### No Deduplication
@@ -428,10 +426,7 @@ export const handleCheckpointReached = async (req: Request, res: Response) => {
       });
     }
 
-    await visitor.updateDataObject(
-      { lastCheckpoint: checkpointNumber },
-      { analytics },
-    );
+    await visitor.updateDataObject({ lastCheckpoint: checkpointNumber }, { analytics });
 
     return res.json({ success: true });
   } catch (error) {
@@ -478,10 +473,10 @@ export const initializeVisitorProgress = async (visitor: any, credentials: Crede
 
 ```ts
 // Good - consistent naming
-"starts", "completions", "wins", "itemsCollected"
+("starts", "completions", "wins", "itemsCollected");
 
 // Avoid - inconsistent naming
-"start", "complete", "victory", "items_collected"
+("start", "complete", "victory", "items_collected");
 ```
 
 ### 2. Always Include profileId for User Attribution
@@ -498,13 +493,13 @@ export const initializeVisitorProgress = async (visitor: any, credentials: Crede
 
 ```ts
 // Good - prevents duplicate completion tracking
-uniqueKey: profileId
+uniqueKey: profileId;
 
 // Good - allows tracking each item separately
-uniqueKey: `${profileId}-${itemId}`
+uniqueKey: `${profileId}-${itemId}`;
 
 // Bad - timestamp makes every event unique (may not be desired)
-uniqueKey: `${profileId}-${Date.now()}`  // Only if you WANT duplicates
+uniqueKey: `${profileId}-${Date.now()}`; // Only if you WANT duplicates
 ```
 
 ### 4. Batch Related Analytics

@@ -32,9 +32,10 @@ export type BadgeRecord = {
 /**
  * Get all active badges from ecosystem inventory
  * Uses cached inventory items for performance
+ * Pass forceRefresh=true to bypass cache (used when inventory ZIP is re-uploaded)
  */
-export const getBadges = async (credentials: Credentials): Promise<BadgeRecord> => {
-  const inventoryItems = await getCachedInventoryItems({ credentials });
+export const getBadges = async (credentials: Credentials, forceRefresh = false): Promise<BadgeRecord> => {
+  const inventoryItems = await getCachedInventoryItems({ credentials, forceRefresh });
 
   const badges: BadgeRecord = {};
 
@@ -106,7 +107,7 @@ export * from "./getVisitorBadges.js";
 
 ## Usage in Controllers
 
-Use the utilities in your controller:
+Use the utilities in your controller. Always support `forceRefreshInventory` so the ecosystem inventory cache can be bypassed when badge items are updated:
 
 ```ts
 import {
@@ -122,9 +123,14 @@ export const handleGetConfiguration = async (req: Request, res: Response) => {
   try {
     const credentials = getCredentials(req.query);
     const { visitorId, urlSlug } = credentials;
+    const forceRefreshInventory = req.query.forceRefreshInventory === "true";
 
     // Fetch badges and other data in parallel
-    const promises = [getProfile(credentials), getWorldDataObject({ credentials }), getBadges(credentials)];
+    const promises = [
+      getProfile(credentials),
+      getWorldDataObject({ credentials }),
+      getBadges(credentials, forceRefreshInventory),
+    ];
     const [{ isAdmin }, { dataObject }, badges] = await Promise.all(promises);
 
     // Get visitor's owned badges
@@ -163,6 +169,31 @@ export { Ecosystem };
 ```
 
 ## Client Implementation
+
+### forceRefreshInventory
+
+When new badge items are uploaded to the ecosystem, the server's inventory cache (24h TTL) may serve stale data. To support cache busting, the client must read the `forceRefreshInventory` search param and pass it to the game-state endpoint.
+
+In your page component that fetches game state (e.g. `Home.tsx`):
+
+```tsx
+import { useSearchParams } from "react-router-dom";
+
+const [searchParams] = useSearchParams();
+const forceRefreshInventory = searchParams.get("forceRefreshInventory") === "true";
+
+useEffect(() => {
+  if (hasInteractiveParams) {
+    backendAPI
+      .get("/game-state", { params: { forceRefreshInventory } })
+      .then((response) => setGameState(dispatch, response.data))
+      .catch((error) => setErrorMessage(dispatch, error as ErrorType))
+      .finally(() => setIsLoading(false));
+  }
+}, [hasInteractiveParams]);
+```
+
+This allows Topia to append `?forceRefreshInventory=true` to the iframe URL after uploading a new inventory ZIP, ensuring the app picks up new badge definitions immediately.
 
 ### Client Types
 
@@ -220,18 +251,18 @@ const getBadgesContent = () => {
   }
 
   return (
-    <div className="grid grid-cols-3 gap-6 pt-4">
+    <div className="grid grid-cols-3 gap-3">
       {Object.values(badges).map((badge) => {
         const { name, description, icon } = badge;
         const hasBadge = visitorInventory && Object.keys(visitorInventory).includes(name);
-        const style = { width: "90px", filter: "none" };
-        if (!hasBadge) style.filter = "grayscale(1)";
+        const style = !hasBadge ? { filter: "grayscale(1)" } : { filter: "none" };
         return (
           <div className="tooltip" key={name}>
-            <span className="tooltip-content" style={{ width: "115px" }}>
-              {name} {description && `- ${description}`}
+            <span className="tooltip-content p3" style={{ width: "115px" }}>
+              {description}
             </span>
             <img src={icon} alt={name} style={style} />
+            <p className="p3">{name}</p>
           </div>
         );
       })}
