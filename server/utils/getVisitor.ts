@@ -1,7 +1,8 @@
 import { VisitorInterface } from "@rtsdk/topia";
 import { Visitor } from "./topiaInit.js";
-import { Credentials, VisitorDataObjectType } from "../types/index.js";
+import { Credentials } from "../types/index.js";
 import { standardizeError } from "./standardizeError.js";
+import { VisitorDataObjectType } from "@shared/types/VisitorData.js";
 
 export const getVisitor = async (credentials: Credentials, shouldGetVisitorDetails = false) => {
   try {

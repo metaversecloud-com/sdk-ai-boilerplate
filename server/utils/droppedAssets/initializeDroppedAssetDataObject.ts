@@ -13,6 +13,6 @@ export const initializeDroppedAssetDataObject = async (droppedAsset: IDroppedAss
 
     return;
   } catch (error: any) {
-    return standardizeError(error);
+    throw standardizeError(error);
   }
 };

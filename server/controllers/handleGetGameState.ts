@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
-import { errorHandler, getCredentials, getDroppedAsset, Visitor, World } from "@utils/index.js";
-import { VisitorInterface } from "@rtsdk/topia";
+import { errorHandler, getCredentials, getDroppedAsset, getVisitor, World } from "@utils/index.js";
 import axios from "axios";
 
 export const handleGetGameState = async (req: Request, res: Response) => {
