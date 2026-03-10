@@ -1,7 +1,7 @@
 {
   "name": "sdk-ai-boilerplate",
   "author": "metaversecloud.com | topia.io",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "",
   "type": "module",
   "scripts": {
