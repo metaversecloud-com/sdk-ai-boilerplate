@@ -8,6 +8,7 @@ Use the SDK's Visitor controller to interact with visitors in the world: display
 - [moveVisitor - Move or Teleport](#movevisitor---move-or-teleport)
 - [closeIframe - Close UI Panels](#closeiframe---close-ui-panels)
 - [openIframe - Open UI Panels](#openiframe---open-ui-panels)
+- [triggerParticle - Visitor Particle Effects](#triggerparticle---visitor-particle-effects)
 - [Combined Patterns](#combined-patterns)
 
 ---
@@ -394,6 +395,119 @@ export const handleOpenNewIframe = async (req: Request, res: Response) => {
 
 ---
 
+## triggerParticle - Visitor Particle Effects
+
+Trigger a particle effect attached to a visitor's avatar. Unlike `world.triggerParticle()` which requires explicit `{ x, y }` coordinates, `visitor.triggerParticle()` automatically plays the effect at the visitor's current position — no coordinates needed.
+
+### When to Use Visitor vs World Particles
+
+| Use `visitor.triggerParticle` | Use `world.triggerParticle` |
+| ----------------------------- | --------------------------- |
+| Effect should follow the visitor's avatar | Effect at a fixed world position |
+| No position available (e.g., bulk operations) | Effect at a dropped asset's location |
+| Player-centric feedback (power-ups, drops) | Location-centric feedback (item collection, explosions) |
+
+### Basic Visitor Particle
+
+```ts
+import { Visitor } from "../utils/topiaInit.js";
+import { getCredentials, errorHandler } from "../utils/index.js";
+
+export const handlePowerUp = async (req: Request, res: Response) => {
+  try {
+    const credentials = getCredentials(req.query);
+    const { urlSlug, visitorId } = credentials;
+
+    const visitor = await Visitor.get(visitorId, urlSlug, { credentials });
+
+    // Trigger sparkle effect on the visitor's avatar
+    visitor.triggerParticle({ name: "sparkle_1", duration: 2 }).catch(() => {});
+
+    return res.json({ success: true });
+  } catch (error) {
+    return errorHandler({ error, functionName: "handlePowerUp", message: "Error", req, res });
+  }
+};
+```
+
+### Particle Options
+
+```ts
+visitor.triggerParticle({
+  name: string;       // Particle effect name (same effects as world.triggerParticle)
+  duration: number;   // Duration in seconds
+  // No position needed — plays at the visitor's avatar
+});
+```
+
+### Available Particle Effects
+
+The same effects available for `world.triggerParticle` work with `visitor.triggerParticle`:
+
+| Effect Name       | Description              | Best For                  |
+| ----------------- | ------------------------ | ------------------------- |
+| `fireworks_1`     | Colorful fireworks burst | Celebrations, wins        |
+| `confetti_1`      | Confetti shower          | Completions, achievements |
+| `sparkle_1`       | Sparkle/glitter effect   | Collection, power-ups     |
+| `smoke_puff`      | Smoke puff               | Dropping, removal         |
+| `blackSmoke_puff` | Dark smoke puff          | Destruction, removal      |
+| `explosion_1`     | Explosion effect         | Impact, dramatic moments  |
+| `hearts_1`        | Floating hearts          | Love, appreciation        |
+| `stars_1`         | Star burst               | Success, leveling up      |
+
+### Fire-and-Forget Pattern
+
+Like all visual effects, visitor particles should not block other operations:
+
+```ts
+// RECOMMENDED: Don't await, use .catch() for error handling
+visitor
+  .triggerParticle({
+    name: "stars_1",
+    duration: 3,
+  })
+  .catch(() => {});
+
+// Continue with other operations immediately
+await visitor.updateDataObject({ level: newLevel });
+```
+
+### Common Use Cases
+
+#### Player Drops Items
+
+```ts
+// Smoke puff on the visitor when they drop items from their bag
+visitor.triggerParticle({ name: "smoke_puff", duration: 2 }).catch(() => {});
+```
+
+#### Level Up
+
+```ts
+// Stars on the visitor when they level up
+visitor.triggerParticle({ name: "stars_1", duration: 3 }).catch(() => {});
+
+visitor
+  .fireToast({ groupId: "levelUp", title: "Level Up!", text: `You reached level ${newLevel}!` })
+  .catch(() => {});
+```
+
+#### Achievement Earned
+
+```ts
+// Confetti on the visitor when they earn a badge
+visitor.triggerParticle({ name: "confetti_1", duration: 4 }).catch(() => {});
+```
+
+#### Game Win
+
+```ts
+// Fireworks on the visitor when they win
+visitor.triggerParticle({ name: "fireworks_1", duration: 5 }).catch(() => {});
+```
+
+---
+
 ## Combined Patterns
 
 ### Complete Action with Feedback
@@ -477,9 +591,10 @@ await Promise.all([
 
 | Method                                                                    | Purpose               | Fire-and-Forget? |
 | ------------------------------------------------------------------------- | --------------------- | ---------------- |
-| `visitor.fireToast({ groupId, title, text })`                             | Display notification  | Yes              |
-| `visitor.moveVisitor({ x, y, shouldTeleportVisitor })`                    | Move/teleport visitor | No (await)       |
-| `visitor.closeIframe(droppedAssetId)`                                     | Close UI panel        | Yes              |
-| `visitor.openIframe({ droppedAssetId, link, shouldOpenInDrawer, title })` | Open UI panel         | No (await)       |
+| `visitor.fireToast({ groupId, title, text })`                             | Display notification      | Yes              |
+| `visitor.moveVisitor({ x, y, shouldTeleportVisitor })`                    | Move/teleport visitor     | No (await)       |
+| `visitor.closeIframe(droppedAssetId)`                                     | Close UI panel            | Yes              |
+| `visitor.openIframe({ droppedAssetId, link, shouldOpenInDrawer, title })` | Open UI panel             | No (await)       |
+| `visitor.triggerParticle({ name, duration })`                              | Particle at visitor avatar | Yes              |
 
 **Fire-and-Forget**: Use `.catch()` without `await` - errors logged but don't block execution.
