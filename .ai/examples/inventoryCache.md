@@ -187,7 +187,7 @@ const getBadges = async (credentials: Credentials) => {
 
 ```ts
 import { getCachedInventoryItems } from "../utils/index.js";
-import { User } from "./topiaInit.js";
+import { Visitor } from "./topiaInit.js";
 
 export const awardBadge = async ({ badgeName, credentials }: { badgeName: string; credentials: Credentials }) => {
   // Get all inventory items from cache
@@ -197,9 +197,8 @@ export const awardBadge = async ({ badgeName, credentials }: { badgeName: string
   const badge = items.find((item) => item.name === badgeName && item.type === "BADGE");
   if (!badge) throw new Error(`Badge "${badgeName}" not found in ecosystem inventory`);
 
-  // profileId is already in credentials from req.query
-  const user = await User.create({ credentials });
-  await user.grantInventoryItem(badge, 1);
+  const visitor = await Visitor.get(credentials.visitorId, credentials.urlSlug, { credentials });
+  await visitor.grantInventoryItem(badge, 1);
 
   return { success: true, badge };
 };
@@ -337,17 +336,14 @@ Returns cache status for debugging purposes.
 Common filters for inventory items:
 
 ```ts
-// Badges only
-items.filter((item) => item.type === "BADGE");
-
 // Active badges only
 items.filter((item) => item.type === "BADGE" && item.status === "ACTIVE");
 
-// Decorations only
-items.filter((item) => item.type === "DECORATION");
+// Active accessories only
+items.filter((item) => item.type === "ACCESSORY" && item.status === "ACTIVE");
 
 // Items with specific metadata
-items.filter((item) => item.metadata?.category === "rare");
+items.filter((item) => item.type === "ITEM" && item.metadata?.category === "rare");
 ```
 
 ## Notes
