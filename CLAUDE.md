@@ -20,7 +20,6 @@ This document provides Claude-specific guidelines for working with this Topia SD
 - `client/backendAPI.ts`
 - `client/setErrorMessage.ts`
 - `server/getCredentials.ts`
-- `server/errorHandler.ts`
 
 **REQUIRED FILES:**
 
