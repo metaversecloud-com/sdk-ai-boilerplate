@@ -65,6 +65,21 @@ app.use(function (req, res, next) {
   next();
 });
 
+// Prevent crashes from unhandled promise rejections (e.g., API timeouts after response sent)
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  // ERR_HTTP_HEADERS_SENT is non-fatal — response was already sent, just log it
+  if ((error as any).code === "ERR_HTTP_HEADERS_SENT") {
+    console.error("Caught ERR_HTTP_HEADERS_SENT (response already sent):", error.message);
+    return;
+  }
+  console.error("Uncaught Exception:", error);
+  process.exit(1);
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port: ${PORT}`);
 });

@@ -20,7 +20,6 @@ NON-NEGOTIABLES (DO NOT VIOLATE)
   - client/backendAPI.ts
   - client/setErrorMessage.ts
   - server/getCredentials.ts
-  - server/errorHandler.ts
 - client/topiaInit.ts MUST exist; you may adjust its exports if needed.
 - Preserve file structure and scripts.
 - Never invent SDK methods; use only documented APIs.
@@ -61,6 +60,26 @@ await visitor.incrementDataObjectValue(`completions`, 1, {
   analytics: [{ analyticName: "completions", incrementBy: 2, profileId, uniqueKey: profileId, urlSlug }],
 });
 ```
+
+SHARED TYPES
+
+- Types used by both client and server MUST live in `shared/types/` — never duplicate type definitions across client and server.
+- The `shared/` folder is already configured in both `client/tsconfig.json` (via the `@shared/*` path alias) and `server/tsconfig.json`.
+- Common shared types include: game config interfaces, speed/mode enums, badge types, leaderboard entry types, visitor inventory types, and any other data shapes that the server produces and the client consumes.
+- Server-only types (e.g., `IDroppedAsset` which extends SDK's `DroppedAssetInterface`) stay in `server/types/` but should import shared base types rather than redefining them.
+- Pattern:
+  ```ts
+  // shared/types/GameTypes.ts — single source of truth
+  export type SpeedMode = "slow" | "medium" | "fast" | "progressive";
+  export interface GameConfig { maxColors: number; lives: number; speed: SpeedMode; particlesEnabled: boolean; }
+
+  // server/types/DroppedAssetTypes.ts — extends shared types
+  import { GameConfig } from "@shared/types/GameTypes.js";
+  export interface ColorEchoDataObject extends GameConfig { leaderboard: { [profileId: string]: string }; }
+
+  // client/src/context/types.ts — re-exports shared types
+  export type { SpeedMode, GameConfig } from "@shared/types/GameTypes";
+  ```
 
 ARCHITECTURE & BOUNDARIES
 
