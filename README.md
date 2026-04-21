@@ -31,7 +31,22 @@ _Does your app have special admin functionality? If so your key features may loo
 - Winter (default): A snowy theme that when selected will drop snowflakes throughout the scene
 - Spring: A garden theme that when selected will drop flowers throughout the scene
 
-### Data objects
+## Required Assets with Unique Names
+
+_If your app uses dropped assets on the canvas that are found by unique name, document them here. This helps world builders set up the correct assets for the app to function._
+
+| Unique Name Pattern | Description |
+| ------------------- | ----------- |
+| `AppName_keyAsset` | Key asset that opens the app drawer |
+| `AppName_item_{id}` | Dynamically created assets (created/deleted by the app) |
+
+> **Note:** Assets with fixed unique names (e.g., `AppName_keyAsset`) must be placed in the world manually by an admin. Assets with dynamic patterns (e.g., `AppName_item_{timestamp}`) are created and managed by the app at runtime.
+
+## Technical Architecture
+
+### Data Objects
+
+_We use data objects to store information about each implementation of the app per world._
 
 #### Visitor / User
 

@@ -97,6 +97,101 @@ ARCHITECTURE & BOUNDARIES
 - Keep the SDK wrapper thin to simplify mocking/tests.
 - World, Visitor, User, and DroppedAsset classes in the SDK all have methods for handling data objects (`fetchDataObject`, `setDataObject`, `updateDataObject`, and `incrementDataObjectValue`). Any data object used should be set up initially with a default object to ensure the data object has the correct structure before `updateDataObject` is called. An end to end example of this can be found in handleGetGameState.ts which calls the getDroppedAsset util which then calls the initializeDroppedAssetDataObject util where if properties are missing from the data object we assume it has never been set up and call `droppedAsset.setDataObject` with the appropriate default data. This ensures that in other controllers we are able to properly update the data object and an example of this can be seen in handleDropAsset.ts. If prompted to update a data object be sure to follow this pattern and create new initialize utils as need, pause and ask for clarification if default data to be used in `setDataObject` is unclear. Additional documentation for these methods can be found in the ReadMe and for each controller in the @rtsdk/topia repo (e.g. https://metaversecloud-com.github.io/mc-sdk-js/classes/controllers.Visitor.html#setdataobject).
 
+VISITOR INITIALIZATION (getVisitor utility)
+
+- **Always use the `getVisitor` utility** instead of calling `Visitor.get` or `Visitor.create` directly in controllers.
+- `getVisitor` ensures the visitor's data object is initialized with app-specific defaults before any `updateDataObject` call — the same pattern `getDroppedAsset` → `initializeDroppedAssetDataObject` follows for dropped assets.
+- The utility handles: fetching/creating the visitor, initializing per-app data scoped by `${urlSlug}-${sceneDropId}`, optionally fetching inventory/badges, and returning `isAdmin`.
+- Pattern:
+  ```ts
+  // server/utils/getVisitor.ts
+  export const getVisitor = async (
+    credentials: Credentials,
+    options: { shouldGetVisitorDetails?: boolean; includeInventory?: boolean } = {},
+  ) => {
+    const { sceneDropId, urlSlug, visitorId } = credentials;
+    const { shouldGetVisitorDetails = false, includeInventory = false } = options;
+
+    let visitor;
+    if (shouldGetVisitorDetails) visitor = await Visitor.get(visitorId, urlSlug, { credentials });
+    else visitor = Visitor.create(visitorId, urlSlug, { credentials });
+
+    // Initialize visitor data for this app instance if missing
+    const dataObject = await visitor.fetchDataObject();
+    const key = `${urlSlug}-${sceneDropId}`;
+    if (!dataObject?.[key]) {
+      await visitor.setDataObject({ [key]: DEFAULT_VISITOR_DATA }, { lock: { lockId, releaseLock: true } });
+    }
+
+    // Optionally fetch inventory
+    let visitorInventory = { badges: {} };
+    if (includeInventory) {
+      await visitor.fetchInventoryItems();
+      visitorInventory = getVisitorBadges(visitor.inventoryItems);
+    }
+
+    return { visitor, isAdmin: visitor.isAdmin ?? false, visitorGameData, visitorInventory };
+  };
+  ```
+- Usage in controllers:
+  ```ts
+  // Need admin check + badges
+  const { visitor, isAdmin, visitorInventory } = await getVisitor(credentials, {
+    shouldGetVisitorDetails: true,
+    includeInventory: true,
+  });
+
+  // Just need a visitor instance for an action (e.g., moveVisitor)
+  const { visitor } = await getVisitor(credentials);
+
+  // For a different player (cross-user)
+  const { visitor, visitorGameData, visitorInventory } = await getVisitor(
+    { ...credentials, visitorId: otherPlayer.visitorId, profileId: otherPlayer.profileId },
+    { includeInventory: true },
+  );
+  ```
+- **Adapt `DEFAULT_VISITOR_DATA` per app** — each app defines its own default shape in the `getVisitor` file or a shared constants file.
+
+REAL-TIME UPDATES (SSE — Server-Sent Events)
+
+- **Never use polling** to sync state between players or across clients. Polling generates excessive API load at scale (N clients × 1 request every few seconds = unsustainable).
+- **Use Server-Sent Events (SSE)** for any app where one player's action needs to update another player's UI (multiplayer games, collaborative features, spectator views).
+- **Architecture**:
+  - `server/utils/sseManager.ts` — In-memory connection manager. Tracks active SSE connections, filters events to the correct recipients, and prunes stale connections.
+  - `GET /api/sse` — Client establishes a persistent SSE connection with credentials in query params.
+  - `POST /api/heartbeat` — Client pings every 5 minutes to keep the connection alive. Server prunes connections inactive for 10+ minutes.
+  - Controllers call `sseManager.publish()` after updating game state. The manager pushes the event to all other connected clients for the same asset/world.
+- **Event filtering**: Events are only sent to connections matching the same `assetId` and `urlSlug`, but NOT the sender (identified by `visitorId` + `interactiveNonce`). The player who made the action gets their update from the API response; SSE delivers it to everyone else.
+- **Client pattern**:
+  ```tsx
+  // Build SSE URL with same credentials as backendAPI
+  const sseUrl = `/api/sse?${credentialParams.toString()}`;
+  const eventSource = new EventSource(sseUrl);
+  
+  eventSource.onmessage = (event) => {
+    const { kind, data } = JSON.parse(event.data);
+    if (data?.gameState) {
+      dispatch({ type: SET_GAME_STATE, payload: { gameState: data.gameState } });
+    }
+  };
+  
+  // Heartbeat every 5 minutes
+  setInterval(() => backendAPI.post("/heartbeat"), 5 * 60 * 1000);
+  ```
+- **Server publish pattern** (in every controller that changes shared state):
+  ```ts
+  sseManager.publish({
+    event: "toss",  // event type for client to identify
+    assetId, urlSlug, visitorId, interactiveNonce,
+    data: { gameState: droppedAsset.dataObject },
+  });
+  ```
+- **When to use SSE vs polling**:
+  - SSE: Multiplayer games, turn-based apps, lobby systems, collaborative tools — anywhere one user's action should update another's screen.
+  - Polling (if ever): Only as a last resort for apps with no server control, or for very infrequent checks (e.g., once per minute admin status check). Even then, prefer SSE.
+- **Single-instance vs multi-instance**: The in-memory SSE manager works for single-server deployments. For horizontal scaling (multiple server instances), replace the in-memory manager with Redis Pub/Sub (see `sdk-chess-game/server/redis-sse/` for the Redis-backed version).
+- **Reference implementations**: `sdk-ring-toss` (in-memory SSE), `sdk-chess-game` (Redis Pub/Sub SSE).
+
 RESPONSE SCHEMA (Controllers)
 
 - Success: { success: true, data?: any }
@@ -160,7 +255,8 @@ WORKFLOW
 4. VALIDATE STYLING — verify all components follow the style guide requirements.
 5. FINALIZE — after implementation is complete:
    - Remove unused boilerplate code (utils, components, types) and update barrel exports.
-   - Rewrite README.md to describe the new app (not the boilerplate).
+   - Rewrite README.md to describe the new app (not the boilerplate). Follow the structure in sdk-grow-together/README.md as a reference. Include all sections: Introduction, Key Features, Required Assets with Unique Names, Technical Architecture (Data Objects), API Endpoints, Environment Variables, and Getting Started.
+   - **Required Assets with Unique Names** — If the app uses dropped assets found by unique name, document every unique name pattern in a table in the README. This is critical for world builders setting up the app. Include both fixed names (manually placed) and dynamic patterns (created at runtime).
    - Rewrite server/tests/routes.test.ts to test the new app's routes; update SDK mock.
 6. EXPLAIN — provide the Deliverable Format output.
 
@@ -171,5 +267,5 @@ DEFINITION OF DONE
 - Jest tests cover new route(s) and assert SDK + credentials flow.
 - No changes to protected files; client/topiaInit.ts remains present.
 - Unused boilerplate code has been removed.
-- README.md describes the new app.
+- README.md describes the new app and includes a "Required Assets with Unique Names" section if applicable.
 - Server tests pass and cover the new routes.

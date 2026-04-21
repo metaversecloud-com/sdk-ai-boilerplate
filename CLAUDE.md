@@ -121,6 +121,10 @@ await visitor.grantInventoryItem(badge, 1);
 - `forceRefresh: true` option for immediate refresh
 - See `.ai/examples/inventoryCache.md` for full implementation
 
+### Real-Time Updates (SSE)
+
+**Never use polling** to sync state between players. Use Server-Sent Events (SSE) for any app where one player's action needs to update another player's UI. See `.ai/rules.md` section "REAL-TIME UPDATES" for the full pattern. Reference implementations: `sdk-ring-toss` (in-memory SSE), `sdk-chess-game` (Redis Pub/Sub SSE).
+
 ### Response Schema (Controllers)
 
 - **Success**: `{ success: true, data?: any }`
