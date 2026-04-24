@@ -39,6 +39,10 @@ SDK USAGE POLICY
   - Cross-user (user triggering an action on another user, e.g., admin awarding a badge): override `profileId` with the target user's — use `User.create({ credentials: { ...credentials, profileId: recipientProfileId } })`.
   - See `.ai/examples/awardBadge.md` for a full example.
 - **Inventory & Experience Points**: When prompted to add an inventory system and Experience Points are not explicitly mentioned, ask if the "Experience Points" ecosystem item should be integrated. XP should always be stored as an inventory item quantity — never in data objects. See `.ai/examples/experiencePoints.md`.
+- **forceRefreshInventory (REQUIRED for any app with badges or inventory)**: Whenever an app uses ecosystem inventory items (badges, decorations, seeds, etc.), the client MUST read `forceRefreshInventory` from URL search params and pass it as a query param to the game-state endpoint. This allows Topia to bust the server's inventory cache when new items are uploaded. Without this, newly added badges or items won't appear until the cache expires (up to 24h).
+  - Client: `const forceRefreshInventory = searchParams.get("forceRefreshInventory") === "true";` then pass to `backendAPI.get("/game-state", { params: { forceRefreshInventory } })`.
+  - Server: `const forceRefreshInventory = req.query.forceRefreshInventory === "true";` then pass to `getBadges(credentials, forceRefreshInventory)` or `getCachedInventoryItems({ credentials, forceRefresh: forceRefreshInventory })`.
+  - See `.ai/examples/badges.md` section "forceRefreshInventory" and `.ai/examples/inventoryCache.md` section "Pass forceRefreshInventory from the Client" for full implementation.
 - Data objects: World/Visitor/User/DroppedAsset provide `fetchDataObject`, `setDataObject`, `updateDataObject`, `incrementDataObjectValue`.
   - Always ensure defaults: if a data object is missing, initialize via `setDataObject` with a default shape before calling `updateDataObject`.
   - Follow the pattern: `handleGetGameState.ts` → `getDroppedAsset` → `initializeDroppedAssetDataObject`. If defaults are unclear, STOP and ask.
