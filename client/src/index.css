@@ -1,3 +1,23 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+ * Cascade layer order (lowest → highest priority):
+ *   1. tailwind   — utility classes
+ *   2. sdk        — Topia SDK component styles (.btn, .card, .p2, etc.)
+ *   3. unlayered  — our tokens.css + components.css (always win)
+ *
+ * Anything not in a layer beats anything in a layer; later-declared layers
+ * beat earlier ones. So an app-prefixed class beats SDK, SDK beats Tailwind.
+ *
+ * See `.ai/style-guide.md` for the full setup and rationale.
+ */
+@layer tailwind, sdk;
+
+@import url("https://sdk-style.s3.amazonaws.com/styles-3.0.2.css") layer(sdk);
+
+@import "./styles/tokens.css";
+@import "./styles/components.css";
+
+@layer tailwind {
+  @tailwind base;
+  @tailwind components;
+  @tailwind utilities;
+}

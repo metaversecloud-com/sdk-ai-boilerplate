@@ -1,0 +1,28 @@
+/*
+ * App design tokens.
+ *
+ * Define brand colors, surfaces, gradients, shadows, etc. as CSS custom
+ * properties here. Consume them in `components.css` and in JSX inline-style
+ * `style={{ ... }}` only for genuinely dynamic values. Don't hard-code hex
+ * values inside individual component classes.
+ *
+ * Use an app-specific prefix on every variable name (e.g. `--er-cyan` for the
+ * escape-room app, `--kr-primary` for kitchen-rush) so tokens are obviously
+ * project-scoped and won't collide with anything from the SDK or Tailwind.
+ *
+ * Example:
+ *
+ *   :root {
+ *     --app-primary: #2563eb;
+ *     --app-bg-card: #ffffff;
+ *     --app-grad-hero: linear-gradient(135deg, #60a5fa, #2563eb);
+ *     --app-shadow-card: 0 6px 14px rgba(15, 23, 42, 0.08);
+ *   }
+ */
+
+/* Re-add the box-sizing reset that Tailwind's preflight used to provide. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

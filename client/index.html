@@ -9,7 +9,10 @@
       href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
       rel="stylesheet"
     />
-    <link href="https://sdk-style.s3.amazonaws.com/styles-3.0.2.css" rel="stylesheet" />
+    <!-- The Topia SDK stylesheet is imported from src/index.css inside
+         @import url(...) layer(sdk) so app-specific CSS can override it
+         without specificity hacks. Do NOT add a <link> for it here — that
+         would land outside the cascade layers and win over everything. -->
 
     <title>SDK AI Template</title>
   </head>

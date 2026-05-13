@@ -1,0 +1,29 @@
+/*
+ * App-specific component classes.
+ *
+ * These are unlayered (not wrapped in `@layer { … }`) so they win over both
+ * the SDK component styles (.btn, .card, etc.) and Tailwind utilities — no
+ * `!important` needed.
+ *
+ * Use an app-specific prefix on every class name (e.g. `.er-card--running`
+ * for the escape-room app, `.kr-tile` for kitchen-rush) so these classes are
+ * obviously project-scoped and won't collide with the SDK or Tailwind.
+ *
+ * Build on top of the SDK's design system rather than replacing it:
+ *
+ *   <div className="card app-card app-card--featured">…</div>
+ *
+ * not
+ *
+ *   <div className="app-custom-card">…</div>
+ *
+ * Consume tokens from `tokens.css` instead of hard-coding values:
+ *
+ *   .app-card--featured {
+ *     background: var(--app-grad-hero);
+ *     border-color: var(--app-primary);
+ *     box-shadow: var(--app-shadow-card);
+ *   }
+ *
+ * See `.ai/style-guide.md` for the full convention.
+ */

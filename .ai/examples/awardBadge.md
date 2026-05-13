@@ -1,5 +1,7 @@
 Use the SDK to grant inventory items (badges) and display toast notifications.
 
+> **`User` and `Visitor` share the same backing dataObject record per profile** — they are two access paths to the same data. Granting an inventory item via `recipientUser.grantInventoryItem(...)` and triggering effects via `recipientVisitor.fireToast(...)` both touch the same profile. See `.ai/examples/dataObjectScoping.md` for the full mental model and key-naming conventions.
+
 **Important — `User.create` requires `profileId`**: When a user acts on their own behalf, `profileId` is already in the credentials from `req.query`. When a user triggers an action that impacts another user (e.g., an admin awarding a badge to a visitor), you must override `profileId` with the recipient's profile ID:
 
 ```ts

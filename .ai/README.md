@@ -15,6 +15,7 @@ This folder contains guidelines and examples for AI assistants working with Topi
 | **Add visual effects** | `examples/worldActivity.md` |
 | **Track analytics** | `examples/analyticsTracking.md` |
 | **Migrate existing data** | `examples/dataMigration.md` |
+| **Understand User vs Visitor dataObjects** | `examples/dataObjectScoping.md` |
 | **Style components** | `style-guide.md` |
 
 ## Guides
@@ -84,6 +85,7 @@ This folder contains guidelines and examples for AI assistants working with Topi
 ### Data Management
 | File | SDK Feature |
 |------|-------------|
+| `examples/dataObjectScoping.md` | User and Visitor share the same dataObject record — key-naming convention for cross-world vs per-world data |
 | `examples/dataMigration.md` | Schema evolution, key renames, format conversions |
 
 ## Getting Started

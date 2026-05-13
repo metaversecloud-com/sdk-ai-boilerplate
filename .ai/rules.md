@@ -12,9 +12,16 @@ PROJECT CONTEXT
 - Repo baseline: https://github.com/metaversecloud-com/sdk-ai-boilerplate
 - You MAY modify client code EXCEPT the protected files. Prefer editing components/pages referenced by App.tsx rather than changing App.tsx itself.
 
+COMPANION DOCS
+
+- `.ai/sdk-fundamentals.md` — protocol-level reference for how Topia SDK apps authenticate (Interactive Keys, JWT signing), communicate with the platform (iframes vs webhooks), receive session credentials, manage dropped assets, and pass backend validation. Read once early; come back when something is unclear about *why* the SDK works the way it does.
+- `.ai/style-guide.md` — CSS cascade-layer setup and the SDK class catalog.
+- `.ai/accessibility.md` — WCAG 2.1 AA patterns required for every UI change.
+- `.ai/examples/` — concrete recipes that combine the above (badges, inventory cache, leaderboards, locking, dropped-asset workflows, etc.).
+
 NON-NEGOTIABLES (DO NOT VIOLATE)
 
-- Do NOT modify:
+- Do NOT modify without explicitly asking for permission first:
   - client/App.tsx
   - client/src/components/PageContainer.tsx
   - client/backendAPI.ts
@@ -46,6 +53,7 @@ SDK USAGE POLICY
 - Data objects: World/Visitor/User/DroppedAsset provide `fetchDataObject`, `setDataObject`, `updateDataObject`, `incrementDataObjectValue`.
   - Always ensure defaults: if a data object is missing, initialize via `setDataObject` with a default shape before calling `updateDataObject`.
   - Follow the pattern: `handleGetGameState.ts` → `getDroppedAsset` → `initializeDroppedAssetDataObject`. If defaults are unclear, STOP and ask.
+  - **`User` and `Visitor` share the same backing record per profile.** They are two access paths to the same data, not separate stores. Cross-world data lives at top-level keys (e.g. `totalAttempts`, `triviaSets.{id}`); per-world per-asset state is conventionally stored under a key shaped like `${urlSlug}-${sceneDropId}`. `setDataObject` is destructive across the whole record. See `.ai/examples/dataObjectScoping.md` for full details, examples, and pitfalls.
   - Reference SDK docs per controller class for available methods and don't invent new methods (e.g. [DroppedAsset.fetchDataObject()](https://metaversecloud-com.github.io/mc-sdk-js/classes/controllers.DroppedAsset.html#fetchdataobject)).
   - Use these methods when prompted to track analytics. `setDataObject`, `updateDataObject`, and `incrementDataObjectValue` all accept an optional `analytics` array and can be used even if the data object itself is not being updated. See example below.
 
@@ -72,14 +80,22 @@ SHARED TYPES
 - Common shared types include: game config interfaces, speed/mode enums, badge types, leaderboard entry types, visitor inventory types, and any other data shapes that the server produces and the client consumes.
 - Server-only types (e.g., `IDroppedAsset` which extends SDK's `DroppedAssetInterface`) stay in `server/types/` but should import shared base types rather than redefining them.
 - Pattern:
+
   ```ts
   // shared/types/GameTypes.ts — single source of truth
   export type SpeedMode = "slow" | "medium" | "fast" | "progressive";
-  export interface GameConfig { maxColors: number; lives: number; speed: SpeedMode; particlesEnabled: boolean; }
+  export interface GameConfig {
+    maxColors: number;
+    lives: number;
+    speed: SpeedMode;
+    particlesEnabled: boolean;
+  }
 
   // server/types/DroppedAssetTypes.ts — extends shared types
   import { GameConfig } from "@shared/types/GameTypes.js";
-  export interface ColorEchoDataObject extends GameConfig { leaderboard: { [profileId: string]: string }; }
+  export interface ColorEchoDataObject extends GameConfig {
+    leaderboard: { [profileId: string]: string };
+  }
 
   // client/src/context/types.ts — re-exports shared types
   export type { SpeedMode, GameConfig } from "@shared/types/GameTypes";
@@ -91,11 +107,24 @@ ARCHITECTURE & BOUNDARIES
 - Flow: UI → client/backendAPI.ts (unchangeable) → server routes/controllers → Topia SDK.
 - Need new client behavior? Expose a new server route; do NOT bypass backendAPI.ts.
 - Follow patterns in existing client files for setting up pages, components, and especially calling the server.
-- **REQUIRED: Use SDK CSS classes** from https://sdk-style.s3.amazonaws.com/styles-3.0.2.css; see `.ai/style-guide.md`.
-  - Use `.btn`, `.card`, `.h1`-`.h4`, `.p1`-`.p4`, etc. classes directly from the SDK
-  - Do NOT use Tailwind utility classes except when absolutely necessary and no SDK class exists
-  - Never use inline styles except for dynamic positioning that cannot be handled via classes
+- **REQUIRED: CSS cascade-layer setup**. The Topia SDK stylesheet, Tailwind, and any app-specific CSS classes coexist via `@layer` declarations in `client/src/index.css`. Priority (lowest → highest) is `tailwind` → `sdk` → unlayered project CSS. See `.ai/style-guide.md` for the full setup (including `index.html`, `tailwind.config.js`, and the `styles/` directory convention).
+  - Use the SDK design system for components: `.btn`, `.card`, `.h1`-`.h4`, `.p1`-`.p4`, form inputs, modals — see https://sdk-style.s3.amazonaws.com/styles-3.0.2.css
+  - Tailwind utility classes (`flex`, `grid`, `gap-*`, `mt-*`, etc.) are fine for layout and spacing; they sit in the lowest layer so they don't fight SDK component styles
+  - App-specific CSS classes (themed cards, glows, custom backgrounds) live in `client/src/styles/*.css`, are imported unlayered, and override SDK + Tailwind without needing `!important`
+  - Tailwind's `preflight` MUST be disabled in `tailwind.config.js` (`corePlugins: { preflight: false }`). The Tailwind v3 PostCSS plugin hoists preflight past `@layer` wrappers, which would otherwise clobber the SDK's typography defaults.
+  - Reference: `sdk-escape-room/client/src/index.css` is the canonical example.
+  - Avoid inline styles except for dynamic positioning that can't be handled via classes
   - Follow the exact patterns shown in `.ai/style-guide.md` for component structure
+- **REQUIRED: Accessibility (WCAG 2.1 AA)**. Topia apps reach students who depend on assistive technology — every component must be operable by keyboard, announceable by a screen reader, and usable at high zoom / reduced motion. The full pattern catalog lives in [`.ai/accessibility.md`](./accessibility.md). Non-negotiables:
+  - Interactive elements are `<button>` / `<a>` / `<input>` — never `<div onClick>`
+  - Icon-only buttons have `aria-label`; decorative images use `alt=""` + `aria-hidden="true"`; meaningful images get descriptive `alt`
+  - Every form input has an associated `<label>` (via `htmlFor`/`id` or wrapping)
+  - Modals use `role="dialog"`, `aria-modal="true"`, an accessible name, focus trapping, and Escape-to-close
+  - Toasts / live updates announce via `role="status"` (polite) or `role="alert"` (assertive)
+  - Custom interactive classes keep a visible `:focus-visible` ring
+  - All animations are gated on `@media (prefers-reduced-motion: reduce)`
+  - No information is conveyed by color alone (pair red/green with an icon or text)
+  - Run a keyboard-only walkthrough and a Lighthouse / axe DevTools audit before considering any UI change "done"
 - Follow server/controllers patterns (naming, error handling, response shape).
 - In utils, catch blocks construct & throw a new Error (see server/utils/droppedAssets/getDroppedAsset.ts). Controllers catch like server/controllers/handleGetGameState.ts.
 - Keep the SDK wrapper thin to simplify mocking/tests.
@@ -107,6 +136,7 @@ VISITOR INITIALIZATION (getVisitor utility)
 - `getVisitor` ensures the visitor's data object is initialized with app-specific defaults before any `updateDataObject` call — the same pattern `getDroppedAsset` → `initializeDroppedAssetDataObject` follows for dropped assets.
 - The utility handles: fetching/creating the visitor, initializing per-app data scoped by `${urlSlug}-${sceneDropId}`, optionally fetching inventory/badges, and returning `isAdmin`.
 - Pattern:
+
   ```ts
   // server/utils/getVisitor.ts
   export const getVisitor = async (
@@ -137,7 +167,9 @@ VISITOR INITIALIZATION (getVisitor utility)
     return { visitor, isAdmin: visitor.isAdmin ?? false, visitorGameData, visitorInventory };
   };
   ```
+
 - Usage in controllers:
+
   ```ts
   // Need admin check + badges
   const { visitor, isAdmin, visitorInventory } = await getVisitor(credentials, {
@@ -154,6 +186,7 @@ VISITOR INITIALIZATION (getVisitor utility)
     { includeInventory: true },
   );
   ```
+
 - **Adapt `DEFAULT_VISITOR_DATA` per app** — each app defines its own default shape in the `getVisitor` file or a shared constants file.
 
 REAL-TIME UPDATES (SSE — Server-Sent Events)
@@ -167,26 +200,31 @@ REAL-TIME UPDATES (SSE — Server-Sent Events)
   - Controllers call `sseManager.publish()` after updating game state. The manager pushes the event to all other connected clients for the same asset/world.
 - **Event filtering**: Events are only sent to connections matching the same `assetId` and `urlSlug`, but NOT the sender (identified by `visitorId` + `interactiveNonce`). The player who made the action gets their update from the API response; SSE delivers it to everyone else.
 - **Client pattern**:
+
   ```tsx
   // Build SSE URL with same credentials as backendAPI
   const sseUrl = `/api/sse?${credentialParams.toString()}`;
   const eventSource = new EventSource(sseUrl);
-  
+
   eventSource.onmessage = (event) => {
     const { kind, data } = JSON.parse(event.data);
     if (data?.gameState) {
       dispatch({ type: SET_GAME_STATE, payload: { gameState: data.gameState } });
     }
   };
-  
+
   // Heartbeat every 5 minutes
   setInterval(() => backendAPI.post("/heartbeat"), 5 * 60 * 1000);
   ```
+
 - **Server publish pattern** (in every controller that changes shared state):
   ```ts
   sseManager.publish({
-    event: "toss",  // event type for client to identify
-    assetId, urlSlug, visitorId, interactiveNonce,
+    event: "toss", // event type for client to identify
+    assetId,
+    urlSlug,
+    visitorId,
+    interactiveNonce,
     data: { gameState: droppedAsset.dataObject },
   });
   ```
@@ -259,7 +297,8 @@ WORKFLOW
 4. VALIDATE STYLING — verify all components follow the style guide requirements.
 5. FINALIZE — after implementation is complete:
    - Remove unused boilerplate code (utils, components, types) and update barrel exports.
-   - Rewrite README.md to describe the new app (not the boilerplate). Follow the structure in sdk-grow-together/README.md as a reference. Include all sections: Introduction, Key Features, Required Assets with Unique Names, Technical Architecture (Data Objects), API Endpoints, Environment Variables, and Getting Started.
+   - **Replace the repo-root `CLAUDE.md`** with the contents of [`.ai/templates/CLAUDE.md`](.ai/templates/CLAUDE.md). The boilerplate's stock `CLAUDE.md` is the boilerplate-maintainer's version and points at `.ai/` files in *this* repo; the template is the per-app version that points up at `../sdk-ai-boilerplate/.ai/` (with the GitHub URL and local `./.ai/` as fallbacks). Fill in the "App-specific context" section with anything specific to *this* app — one-line description, required dropped-asset unique names, ecosystem badge names, gameplay nuances — or leave the default pointer to `README.md`.
+   - Rewrite README.md to describe the new app (not the boilerplate). Use the boilerplate's own [`README.md`](../README.md) as the structural reference — it is the canonical template and is kept in sync with this rules doc. Keep every section heading from the template (Introduction, Key Features, Required Assets with Unique Names, Technical Architecture (Data Objects), API Endpoints, Environment Variables, Getting Started, For Developers) and fill them in with the new app's specifics.
    - **Required Assets with Unique Names** — If the app uses dropped assets found by unique name, document every unique name pattern in a table in the README. This is critical for world builders setting up the app. Include both fixed names (manually placed) and dynamic patterns (created at runtime).
    - Rewrite server/tests/routes.test.ts to test the new app's routes; update SDK mock.
 6. EXPLAIN — provide the Deliverable Format output.
