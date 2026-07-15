@@ -97,18 +97,18 @@ The data object attached to the world stores information for every instance of t
 
 _Document every server route the client (or external systems) can call. Group by feature so it's easy to scan._
 
-| Method | Route                | Description                                                            |
-| ------ | -------------------- | ---------------------------------------------------------------------- |
-| `GET`  | `/visitor`           | Initialize / fetch visitor data (calls `getVisitor` utility)           |
-| `GET`  | `/game-state`        | Return the current per-asset game state from the key asset data object |
-| `POST` | `/game-state`        | Update game state (admin or gameplay actions)                          |
-| `GET`  | `/leaderboard`       | Return the world-scoped leaderboard for this app                       |
-| `POST` | `/leaderboard`       | Submit a score to the leaderboard                                      |
-| `GET`  | `/admin/settings`    | Return admin-configurable settings for this asset                      |
-| `POST` | `/admin/settings`    | Update admin settings (admin-only)                                     |
-| `POST` | `/admin/reset`       | Reset the game state for this asset (admin-only)                       |
-| `GET`  | `/sse/:assetId`      | Open an SSE stream for real-time updates (if the app uses SSE)         |
-| `POST` | `/webhook`           | Receive webhook callbacks from the Topia platform                      |
+| Method | Route             | Description                                                            |
+| ------ | ----------------- | ---------------------------------------------------------------------- |
+| `GET`  | `/visitor`        | Initialize / fetch visitor data (calls `getVisitor` utility)           |
+| `GET`  | `/game-state`     | Return the current per-asset game state from the key asset data object |
+| `POST` | `/game-state`     | Update game state (admin or gameplay actions)                          |
+| `GET`  | `/leaderboard`    | Return the world-scoped leaderboard for this app                       |
+| `POST` | `/leaderboard`    | Submit a score to the leaderboard                                      |
+| `GET`  | `/admin/settings` | Return admin-configurable settings for this asset                      |
+| `POST` | `/admin/settings` | Update admin settings (admin-only)                                     |
+| `POST` | `/admin/reset`    | Reset the game state for this asset (admin-only)                       |
+| `GET`  | `/sse/:assetId`   | Open an SSE stream for real-time updates (if the app uses SSE)         |
+| `POST` | `/webhook`        | Receive webhook callbacks from the Topia platform                      |
 
 > Real-time updates pattern: see `.ai/rules.md` → **REAL-TIME UPDATES (SSE)** and the canonical reference implementation in `topia-sdk-apps/sdk-ring-toss/server/utils/sseManager.ts`.
 
@@ -129,7 +129,6 @@ Create a `.env` file in the root directory. See `.env-example` for a template.
 
 ### Where to find `INTERACTIVE_KEY` and `INTERACTIVE_SECRET`
 
-- [Topia Dev Account Dashboard](https://dev.topia.io/t/dashboard/integrations)
 - [Topia Production Account Dashboard](https://topia.io/t/dashboard/integrations)
 
 ## Getting Started
@@ -177,10 +176,10 @@ Every UI change must meet **WCAG 2.1 AA**.
 
 ### SDK fundamentals
 
-If anything about how the SDK *works* is unclear (Interactive Keys, JWT signing, iframes vs webhooks, session credentials, dropped-asset operations, backend validation), read [`.ai/sdk-fundamentals.md`](.ai/sdk-fundamentals.md).
+If anything about how the SDK _works_ is unclear (Interactive Keys, JWT signing, iframes vs webhooks, session credentials, dropped-asset operations, backend validation), read [`.ai/sdk-fundamentals.md`](.ai/sdk-fundamentals.md).
 
 ### Helpful links
 
 - [SDK Developer docs](https://metaversecloud-com.github.io/mc-sdk-js/index.html)
-- [View this app in production](https://topia.io/appname-prod) *(replace with your app's URL)*
+- [View this app in production](https://topia.io/appname-prod) _(replace with your app's URL)_
 - On-canvas turn-based game reference — TicTacToe: [GitHub](https://github.com/metaversecloud-com/sdk-tictactoe) · [demo](https://topia.io/tictactoe-prod)

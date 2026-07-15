@@ -1,10 +1,10 @@
 export const Loading = () => {
   return (
-    <div className="container my-6">
+    <div className="grid items-center my-6 w-full">
       <img
         alt="Loading"
         src="https://sdk-style.s3.amazonaws.com/icons/loading.svg"
-        style={{ margin: "auto", width: 50, height: 50 }}
+        style={{ margin: "auto", height: 50 }}
       />
     </div>
   );
