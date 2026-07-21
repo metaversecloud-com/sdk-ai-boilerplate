@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Workload template for the `ai-boilerplate0` service. Reusable across envs; the overlay
+# adds the KEDA scaler + interceptor and drops the direct Ingress.
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: ai-boilerplate0
+    includeSelectors: false

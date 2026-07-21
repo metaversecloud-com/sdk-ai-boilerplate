@@ -1,0 +1,21 @@
+# KEDA HTTP add-on scale-to-zero (0<->1) for dev. The interceptor holds the first
+# request while the Deployment scales 0->1, then forwards it. The ALB reaches the
+# interceptor via ai-boilerplate0-interceptor-ingress.yaml on the shared sdk-apps ALB group.
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: ai-boilerplate0
+spec:
+  # >1 host here = scenario "same deployment, multiple URLs" (shared keys).
+  hosts:
+    - ai-boilerplate0-dev-topia.topia-rtsdk.com
+  scaleTargetRef:
+    name: ai-boilerplate0
+    kind: Deployment
+    apiVersion: apps/v1
+    service: ai-boilerplate0
+    port: 80
+  replicas:
+    min: 0
+    max: 1
+  scaledownPeriod: 10800

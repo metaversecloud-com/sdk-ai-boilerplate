@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-boilerplate0
+  labels:
+    app.kubernetes.io/name: ai-boilerplate0
+  annotations:
+    # All SDK apps in the cluster share ONE ALB via this group (flat ALB cost).
+    alb.ingress.kubernetes.io/group.name: topia-dev
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /api/system/health
+    # ACM cert auto-discovered by host (wildcard *.topia-rtsdk.com).
+spec:
+  ingressClassName: alb
+  rules:
+    - host: ai-boilerplate0-dev-topia.topia-rtsdk.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-boilerplate0
+                port:
+                  number: 80
+  # Embedded in a topia.io iframe - do NOT add restrictive frame-ancestors here.

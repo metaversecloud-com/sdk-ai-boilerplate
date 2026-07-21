@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-boilerplate0-config
+  labels:
+    app.kubernetes.io/name: ai-boilerplate0
+data:
+  INSTANCE_DOMAIN: 'api.topia.io'
+  INSTANCE_PROTOCOL: 'https'
+  INTERACTIVE_KEY: 'REPLACE_WITH_REAL_INTERACTIVE_KEY'
+  LEADERBOARD_BASE_URL: 'REPLACE_WITH_LEADERBOARD_BASE_URL'
+  NODE_ENV: 'production'

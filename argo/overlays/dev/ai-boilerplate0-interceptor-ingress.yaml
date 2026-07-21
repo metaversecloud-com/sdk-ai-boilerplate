@@ -1,0 +1,30 @@
+# Front door for scale-to-zero: ALB (group sdk-apps) -> KEDA HTTP interceptor proxy
+# -> wakes ai-boilerplate0 0->1, holds the request, forwards it. MUST live in the `keda`
+# namespace (an Ingress backend can only target a Service in its own namespace).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-boilerplate0-interceptor
+  namespace: keda
+  annotations:
+    alb.ingress.kubernetes.io/group.name: topia-dev
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    # Interceptor answers 404 to unroutable requests (e.g. ALB health check) and 200
+    # once routed. Treat 404 as healthy so the target group is up while apps sleep.
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/success-codes: "200,404"
+spec:
+  ingressClassName: alb
+  rules:
+    - host: ai-boilerplate0-dev-topia.topia-rtsdk.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keda-add-ons-http-interceptor-proxy
+                port:
+                  number: 8080

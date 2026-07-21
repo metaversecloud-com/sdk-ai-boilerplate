@@ -1,0 +1,17 @@
+{
+  "app": "sdk-ai-boilerplate",
+  "env": "dev",
+  "clusterName": "Topia-dev-SDK-Apps",
+  "clusterType": "eks",
+  "namespace": "sdk-apps-dev",
+  "services": [
+    {
+      "name": "ai-boilerplate0",
+      "image": "368076259134.dkr.ecr.us-east-1.amazonaws.com/sdk-example:sdk-ai-boilerplate",
+      "hosts": [
+        "ai-boilerplate0-dev-topia.topia-rtsdk.com"
+      ],
+      "health": "/api/system/health"
+    }
+  ]
+}
