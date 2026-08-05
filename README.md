@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://global-uploads.webflow.com/62e7004a0f9b3a63b980ac3c/62e70c84dd3aac06fb2ac2b6_topia-logo-blue-2x.png" style="width: 120px; margin-bottom: 20px" alt="Topia logo">
+</div>
+
 # SDK App README Template
 
 > This README is a template. When you fork the boilerplate into a new app, **replace this file** with one that describes your app — keep the same section structure so world builders and other developers can find what they need in a predictable place.
@@ -112,6 +116,18 @@ _Document every server route the client (or external systems) can call. Group by
 
 > Real-time updates pattern: see `.ai/rules.md` → **REAL-TIME UPDATES (SSE)** and the canonical reference implementation in `topia-sdk-apps/sdk-ring-toss/server/utils/sseManager.ts`.
 
+## Analytics
+
+_Document every analytics event this app fires so ops and product can find it. Include what triggers each event and where in the code it lives. If the app also writes to a side channel (Google Sheets, external analytics), note that here too._
+
+| Event             | Fired when                                     | Where                |
+| ----------------- | ---------------------------------------------- | -------------------- |
+| `starts`          | A visitor opens the drawer for the first time. | `GET /visitor`.      |
+| `gameCompletions` | A game round finishes successfully.            | `POST /game-state`.  |
+| `resets`          | Admin resets the game.                         | `POST /admin/reset`. |
+
+If the app writes to Google Sheets (via `GOOGLESHEETS_*` env vars), note which events are appended and to which Sheet range.
+
 ## Environment Variables
 
 Create a `.env` file in the root directory. See `.env-example` for a template.
@@ -181,5 +197,5 @@ If anything about how the SDK _works_ is unclear (Interactive Keys, JWT signing,
 ### Helpful links
 
 - [SDK Developer docs](https://metaversecloud-com.github.io/mc-sdk-js/index.html)
-- [View this app in production](https://topia.io/appname-prod) _(replace with your app's URL)_
-- On-canvas turn-based game reference — TicTacToe: [GitHub](https://github.com/metaversecloud-com/sdk-tictactoe) · [demo](https://topia.io/tictactoe-prod)
+- View it in action: [Dev](https://topia.io/appname-dev), [Prod](https://topia.io/appname-prod)
+- [Notion One Pager]()
