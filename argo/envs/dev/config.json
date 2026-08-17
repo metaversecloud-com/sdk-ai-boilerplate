@@ -1,6 +1,7 @@
 {
   "app": "sdk-ai-boilerplate",
   "env": "dev",
+  "targetRevision": "dev",
   "clusterName": "Topia-dev-SDK-Apps",
   "clusterType": "eks",
   "namespace": "sdk-apps-dev",

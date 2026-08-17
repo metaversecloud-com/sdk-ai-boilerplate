@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://global-uploads.webflow.com/62e7004a0f9b3a63b980ac3c/62e70c84dd3aac06fb2ac2b6_topia-logo-blue-2x.png" style="width: 120px; margin-bottom: 20px" alt="Topia logo">
+</div>
+
 # SDK App README Template
 
 > This README is a template. When you fork the boilerplate into a new app, **replace this file** with one that describes your app — keep the same section structure so world builders and other developers can find what they need in a predictable place.
@@ -97,20 +101,32 @@ The data object attached to the world stores information for every instance of t
 
 _Document every server route the client (or external systems) can call. Group by feature so it's easy to scan._
 
-| Method | Route                | Description                                                            |
-| ------ | -------------------- | ---------------------------------------------------------------------- |
-| `GET`  | `/visitor`           | Initialize / fetch visitor data (calls `getVisitor` utility)           |
-| `GET`  | `/game-state`        | Return the current per-asset game state from the key asset data object |
-| `POST` | `/game-state`        | Update game state (admin or gameplay actions)                          |
-| `GET`  | `/leaderboard`       | Return the world-scoped leaderboard for this app                       |
-| `POST` | `/leaderboard`       | Submit a score to the leaderboard                                      |
-| `GET`  | `/admin/settings`    | Return admin-configurable settings for this asset                      |
-| `POST` | `/admin/settings`    | Update admin settings (admin-only)                                     |
-| `POST` | `/admin/reset`       | Reset the game state for this asset (admin-only)                       |
-| `GET`  | `/sse/:assetId`      | Open an SSE stream for real-time updates (if the app uses SSE)         |
-| `POST` | `/webhook`           | Receive webhook callbacks from the Topia platform                      |
+| Method | Route             | Description                                                            |
+| ------ | ----------------- | ---------------------------------------------------------------------- |
+| `GET`  | `/visitor`        | Initialize / fetch visitor data (calls `getVisitor` utility)           |
+| `GET`  | `/game-state`     | Return the current per-asset game state from the key asset data object |
+| `POST` | `/game-state`     | Update game state (admin or gameplay actions)                          |
+| `GET`  | `/leaderboard`    | Return the world-scoped leaderboard for this app                       |
+| `POST` | `/leaderboard`    | Submit a score to the leaderboard                                      |
+| `GET`  | `/admin/settings` | Return admin-configurable settings for this asset                      |
+| `POST` | `/admin/settings` | Update admin settings (admin-only)                                     |
+| `POST` | `/admin/reset`    | Reset the game state for this asset (admin-only)                       |
+| `GET`  | `/sse/:assetId`   | Open an SSE stream for real-time updates (if the app uses SSE)         |
+| `POST` | `/webhook`        | Receive webhook callbacks from the Topia platform                      |
 
 > Real-time updates pattern: see `.ai/rules.md` → **REAL-TIME UPDATES (SSE)** and the canonical reference implementation in `topia-sdk-apps/sdk-ring-toss/server/utils/sseManager.ts`.
+
+## Analytics
+
+_Document every analytics event this app fires so ops and product can find it. Include what triggers each event and where in the code it lives. If the app also writes to a side channel (Google Sheets, external analytics), note that here too._
+
+| Event             | Fired when                                     | Where                |
+| ----------------- | ---------------------------------------------- | -------------------- |
+| `starts`          | A visitor opens the drawer for the first time. | `GET /visitor`.      |
+| `gameCompletions` | A game round finishes successfully.            | `POST /game-state`.  |
+| `resets`          | Admin resets the game.                         | `POST /admin/reset`. |
+
+If the app writes to Google Sheets (via `GOOGLESHEETS_*` env vars), note which events are appended and to which Sheet range.
 
 ## Environment Variables
 
@@ -129,7 +145,6 @@ Create a `.env` file in the root directory. See `.env-example` for a template.
 
 ### Where to find `INTERACTIVE_KEY` and `INTERACTIVE_SECRET`
 
-- [Topia Dev Account Dashboard](https://dev.topia.io/t/dashboard/integrations)
 - [Topia Production Account Dashboard](https://topia.io/t/dashboard/integrations)
 
 ## Getting Started
@@ -177,10 +192,10 @@ Every UI change must meet **WCAG 2.1 AA**.
 
 ### SDK fundamentals
 
-If anything about how the SDK *works* is unclear (Interactive Keys, JWT signing, iframes vs webhooks, session credentials, dropped-asset operations, backend validation), read [`.ai/sdk-fundamentals.md`](.ai/sdk-fundamentals.md).
+If anything about how the SDK _works_ is unclear (Interactive Keys, JWT signing, iframes vs webhooks, session credentials, dropped-asset operations, backend validation), read [`.ai/sdk-fundamentals.md`](.ai/sdk-fundamentals.md).
 
 ### Helpful links
 
 - [SDK Developer docs](https://metaversecloud-com.github.io/mc-sdk-js/index.html)
-- [View this app in production](https://topia.io/appname-prod) *(replace with your app's URL)*
-- On-canvas turn-based game reference — TicTacToe: [GitHub](https://github.com/metaversecloud-com/sdk-tictactoe) · [demo](https://topia.io/tictactoe-prod)
+- View it in action: [Dev](https://topia.io/appname-dev), [Prod](https://topia.io/appname-prod)
+- [Notion One Pager]()
