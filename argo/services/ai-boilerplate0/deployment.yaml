@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-boilerplate0
+  labels:
+    app.kubernetes.io/name: ai-boilerplate0
+spec:
+  # Replicas are managed by the per-env KEDA HTTPScaledObject (dev: scale-to-zero
+  # 0<->1 via the KEDA HTTP add-on interceptor).
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-boilerplate0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-boilerplate0
+    spec:
+      # Suppress Docker-link-style env injection for every Service in the
+      # namespace. This app reads config only from its own ConfigMap/Secret.
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ai-boilerplate0
+          image: ai-boilerplate0 # placeholder; overlay `images:` maps it to the real ref
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            # Per-service config + secret (own INTERACTIVE_KEY/SECRET). Seeded
+            # out-of-band by the Terraform-templated CI job (NOT Argo-managed).
+            - configMapRef:
+                name: ai-boilerplate0-config
+            - secretRef:
+                name: ai-boilerplate0-secrets
+          livenessProbe:
+            httpGet:
+              path: /api/system/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/system/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
