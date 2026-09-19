@@ -1,0 +1,86 @@
+name: Tofu (plan / apply / destroy)
+
+# Infrastructure this app owns lives in tofu/ and is applied REMOTELY by
+# Terrakube -- this workflow never runs tofu on the runner, it only calls the
+# Terrakube API to start a job against the `sdk-ai-boilerplate` workspace. AWS
+# credentials come from Terrakube dynamic credentials (OIDC), so no AWS keys or
+# roles are needed here; the only secret is the Terrakube token.
+on:
+  # Merging a tofu/ change to main applies it. The Terrakube workspace tracks
+  # main, and TK_BRANCH is the ref that triggered the run, so the job builds the
+  # same commit that was just merged.
+  push:
+    branches:
+      - main
+    paths:
+      - 'tofu/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run against the Terrakube workspace"
+        type: choice
+        required: true
+        default: plan
+        options:
+          - plan
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+
+# Never let two jobs race the same Terrakube workspace: a merge and a manual
+# run would otherwise queue two applies against one state.
+concurrency:
+  group: sdk-ai-boilerplate-tofu
+  cancel-in-progress: false
+
+env:
+  TK_API: ${{ vars.TERRAKUBE_API_URL || 'https://terrakube-api.topia.io' }}
+  TK_TOKEN: ${{ secrets.TERRAKUBE_TOKEN }}
+  TK_ORG: ${{ vars.TERRAKUBE_ORGANIZATION_ID }}
+  TK_ORG_NAME: ${{ vars.TERRAKUBE_ORGANIZATION_NAME || 'topia-mgmt' }}
+  TK_WORKSPACE: ${{ vars.TERRAKUBE_WORKSPACE_ID }}
+  # CHANGE ME: the Terrakube workspace for this repo.
+  TK_WORKSPACE_NAME: sdk-ai-boilerplate
+  TK_BRANCH: ${{ github.ref_name }}
+  # A merge applies; a manual run does whatever was picked.
+  TK_ACTION: ${{ inputs.action || 'apply' }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Terrakube job
+        run: |
+          source scripts/terrakube.sh
+
+          case "${TK_ACTION}" in
+            apply)   TEMPLATE_NAME="Apply" ;;
+            destroy) TEMPLATE_NAME="Destroy" ;;
+            *)       TEMPLATE_NAME="Plan" ;;
+          esac
+
+          TEMPLATE_ID="$(tk_template_id "$TEMPLATE_NAME")"
+          JOB_ID="$(tk_create_job "$TEMPLATE_ID")"
+
+          echo "### Terrakube: $TEMPLATE_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo "Job \`${JOB_ID}\` on workspace \`${TK_WORKSPACE}\` (branch \`${TK_BRANCH}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+          tk_wait_job "$JOB_ID"
+
+      - name: Publish outputs
+        if: ${{ env.TK_ACTION == 'apply' }}
+        run: |
+          source scripts/terrakube.sh
+
+          OUTPUTS="$(tk_outputs_json)"
+          {
+            echo ""
+            echo "| Output | Value |"
+            echo "| --- | --- |"
+            echo "| S3_BUCKET | \`$(printf '%s' "$OUTPUTS" | jq -r '.bucket_name.value // "unavailable"')\` |"
+            echo "| dev IRSA role | \`$(printf '%s' "$OUTPUTS" | jq -r '.dev_irsa_role_arn.value // "unavailable"')\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
