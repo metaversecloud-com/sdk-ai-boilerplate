@@ -10,8 +10,6 @@ resources:
   - ai-boilerplate0-config.yaml
   - ai-boilerplate0-sealedsecret.yaml
   - ai-boilerplate0-httpscaledobject.yaml
-  - ai-boilerplate0-interceptor-ingress.yaml
-
 patches:
   # Drop the direct ALB Ingress: in dev the app is fronted through the KEDA
   # interceptor so a scaled-to-zero Deployment is woken by the first request.
