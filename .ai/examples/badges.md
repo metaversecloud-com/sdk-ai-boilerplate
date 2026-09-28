@@ -30,15 +30,19 @@ export type BadgeRecord = {
 };
 
 /**
- * Get all active badges from ecosystem inventory
- * Uses cached inventory items for performance
- * Pass forceRefresh=true to bypass cache (used when inventory ZIP is re-uploaded)
+ * Get all active badges from ecosystem inventory.
+ * Uses cached inventory items for performance. Pass forceRefresh=true to
+ * bypass cache (used when the inventory ZIP is re-uploaded).
+ *
+ * INACTIVE items are already stripped at the cache layer (see
+ * `inventoryCache.ts`), so we filter by type + name only — do NOT re-check
+ * `item.status === "ACTIVE"` here.
  */
 export const getBadges = async (credentials: Credentials, forceRefresh = false): Promise<BadgeRecord> => {
   const inventoryItems = await getCachedInventoryItems({ credentials, forceRefresh });
 
   const badgeItems = inventoryItems
-    .filter((item) => item.name && item.type === "BADGE" && item.status === "ACTIVE")
+    .filter((item) => item.name && item.type === "BADGE")
     .sort((a, b) => (a.metadata?.sortOrder ?? Infinity) - (b.metadata?.sortOrder ?? Infinity));
 
   const badges: BadgeRecord = {};
@@ -74,8 +78,14 @@ export type VisitorInventory = {
 };
 
 /**
- * Extract badges from visitor's inventory items
- * Call visitor.fetchInventoryItems() before using this function
+ * Extract badges from visitor's inventory items.
+ * Call visitor.fetchInventoryItems() before using this function.
+ *
+ * NOTE: the `status === "ACTIVE"` check here is against USER-GRANTED items
+ * (`visitor.inventoryItems`), not the ecosystem cache — it means "the
+ * visitor still holds this item and it hasn't been revoked". Keep this
+ * filter in place; only the ecosystem-cache consumers can safely omit
+ * status checks.
  */
 export const getVisitorBadges = (visitorInventoryItems: any[]): VisitorInventory => {
   const visitorInventory: VisitorInventory = { badges: {} };
@@ -294,7 +304,8 @@ See `examples/awardBadge.md` for the full implementation. Quick reference:
 // Check if visitor already has badge
 if (visitorInventory.badges[badgeName]) return { success: true };
 
-// Get ecosystem inventory and find badge
+// Get ecosystem inventory and find badge. INACTIVE items are stripped at
+// the cache layer, so we don't need to re-check `item.status === "ACTIVE"`.
 const inventoryItems = await getCachedInventoryItems({ credentials });
 const badge = inventoryItems?.find((item) => item.name === badgeName && item.type === "BADGE");
 
