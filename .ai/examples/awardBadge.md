@@ -2,14 +2,18 @@ Use the SDK to grant inventory items (badges) and display toast notifications.
 
 > **`User` and `Visitor` share the same backing dataObject record per profile** — they are two access paths to the same data. Granting an inventory item via `recipientUser.grantInventoryItem(...)` and triggering effects via `recipientVisitor.fireToast(...)` both touch the same profile. See `.ai/examples/dataObjectScoping.md` for the full mental model and key-naming conventions.
 
-**Important — `User.create` requires `profileId`**: When a user acts on their own behalf, `profileId` is already in the credentials from `req.query`. When a user triggers an action that impacts another user (e.g., an admin awarding a badge to a visitor), you must override `profileId` with the recipient's profile ID:
+**Important — `User.create` requires `profileId` at BOTH the top level AND inside credentials**. Same value in both slots, always the TARGET user's profileId. Passing it only inside `credentials` silently returns a User instance bound to the wrong record — reads come back empty and writes hit nothing useful. When a user acts on their own behalf, use their own `profileId` (already in `req.query` credentials). When one user triggers an action that impacts another (e.g., an admin awarding a badge to a visitor), use the recipient's `profileId`:
 
 ```ts
-// Self — profileId comes from req.query credentials automatically
-const user = await User.create({ credentials });
+// Self — pass profileId in both places, always the caller's own
+const user = await User.create({
+  profileId,
+  credentials: { ...credentials, profileId },
+});
 
-// Cross-user — override profileId with the recipient's
+// Cross-user — pass the recipient's profileId in both places
 const recipientUser = await User.create({
+  profileId: recipientProfileId,
   credentials: { ...credentials, profileId: recipientProfileId },
 });
 ```
@@ -98,8 +102,10 @@ export const awardBadgeToVisitor = async ({
     const inventoryItem = inventoryItems?.find((item) => item.name === badgeName && item.type === "BADGE");
     if (!inventoryItem) throw new Error(`Badge "${badgeName}" not found in ecosystem inventory`);
 
-    // User.create with recipient's profileId (cross-user action)
+    // User.create with recipient's profileId (cross-user action) — MUST
+    // set profileId in BOTH the top-level arg and inside credentials.
     const recipientUser = await User.create({
+      profileId: recipientProfileId,
       credentials: { ...credentials, profileId: recipientProfileId },
     });
 

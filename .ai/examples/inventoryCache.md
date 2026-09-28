@@ -62,9 +62,13 @@ export const getCachedInventoryItems = async ({
     const ecosystem = Ecosystem.create({ credentials });
     await ecosystem.fetchInventoryItems();
 
-    // Update cache
+    // Update cache. INACTIVE items are stripped at the cache layer so every
+    // downstream consumer (badges, drops, accessory lookup, etc.) gets a
+    // clean list — they shouldn't render, unlock, or reward an item the
+    // ecosystem has retired. Downstream code should NOT re-filter by status.
     inventoryCache = {
       items: (ecosystem.inventoryItems as InventoryItemInterface[])
+        .filter((item) => (item as any)?.status !== "INACTIVE")
         .map((item) => ({
           ...item,
           metadata: {
@@ -166,8 +170,9 @@ import { getCachedInventoryItems } from "./inventoryCache.js";
 const getBadges = async (credentials: Credentials) => {
   const items = await getCachedInventoryItems({ credentials });
 
-  // Filter for active badges
-  const badges = items.filter((item) => item.type === "BADGE" && item.status === "ACTIVE");
+  // INACTIVE items are already stripped at the cache layer — filter by
+  // type + name only.
+  const badges = items.filter((item) => item.type === "BADGE" && item.name);
 
   // Return as indexed object
   return badges.reduce(
@@ -187,7 +192,7 @@ const getBadges = async (credentials: Credentials) => {
 
 ```ts
 import { getCachedInventoryItems } from "../utils/index.js";
-import { Visitor } from "./topiaInit.js";
+import { User } from "./topiaInit.js";
 
 export const awardBadge = async ({ badgeName, credentials }: { badgeName: string; credentials: Credentials }) => {
   // Get all inventory items from cache
@@ -197,8 +202,14 @@ export const awardBadge = async ({ badgeName, credentials }: { badgeName: string
   const badge = items.find((item) => item.name === badgeName && item.type === "BADGE");
   if (!badge) throw new Error(`Badge "${badgeName}" not found in ecosystem inventory`);
 
-  const visitor = await Visitor.get(credentials.visitorId, credentials.urlSlug, { credentials });
-  await visitor.grantInventoryItem(badge, 1);
+  // profileId must be passed at BOTH the top level AND inside credentials —
+  // passing it only inside `credentials` silently returns a User bound to
+  // the wrong record. See `.ai/examples/awardBadge.md` for details.
+  const user = await User.create({
+    profileId: credentials.profileId,
+    credentials: { ...credentials, profileId: credentials.profileId },
+  });
+  await user.grantInventoryItem(badge, 1);
 
   return { success: true, badge };
 };
@@ -206,14 +217,17 @@ export const awardBadge = async ({ badgeName, credentials }: { badgeName: string
 
 ### Award a Badge to Another User (Cross-User)
 
-When one user awards a badge to a different user, override `profileId` in credentials with the recipient's. See `.ai/examples/awardBadge.md` for a full example.
+When one user awards a badge to a different user, pass the recipient's `profileId` in BOTH the top-level arg and inside credentials. See `.ai/examples/awardBadge.md` for a full example.
 
 ```ts
 import { getCachedInventoryItems } from "../utils/index.js";
 import { User } from "./topiaInit.js";
 
-// recipientProfileId is passed as a parameter (e.g., from req.body)
+// recipientProfileId is passed as a parameter (e.g., from req.body).
+// Missing the top-level `profileId` here silently returns a User bound
+// to the wrong record — always pass it in BOTH slots.
 const recipientUser = await User.create({
+  profileId: recipientProfileId,
   credentials: { ...credentials, profileId: recipientProfileId },
 });
 await recipientUser.grantInventoryItem(badge, 1);
@@ -232,12 +246,12 @@ export const handleGetGameState = async (req: Request, res: Response) => {
     const credentials = getCredentials(req.query);
     const forceRefresh = req.query.forceRefreshInventory === "true";
 
-    // Get cached inventory items
+    // Get cached inventory items (INACTIVE already stripped at cache layer)
     const items = await getCachedInventoryItems({ credentials, forceRefresh });
 
     // Filter badges for the response
     const badges = items
-      .filter((item) => item.type === "BADGE" && item.status === "ACTIVE")
+      .filter((item) => item.type === "BADGE" && item.name)
       .reduce(
         (acc, badge) => {
           acc[badge.name] = {
@@ -280,7 +294,7 @@ const forceRefreshInventory = searchParams.get("forceRefreshInventory") === "tru
 
 useEffect(() => {
   backendAPI
-    .get("/game-state", { params: { forceRefreshInventory } }) } })
+    .get("/game-state", { params: { forceRefreshInventory } })
     .then((response) => {
       // handle response
     });
@@ -333,18 +347,30 @@ Returns cache status for debugging purposes.
 
 ## Filtering Inventory Items
 
-Common filters for inventory items:
+INACTIVE items are stripped once, at the cache layer — downstream code
+should never re-filter by `item.status`. If you find yourself writing
+`item.status === "ACTIVE"` against a cached list, delete it.
+
+Common filters for cached inventory items:
 
 ```ts
-// Active badges only
-items.filter((item) => item.type === "BADGE" && item.status === "ACTIVE");
+// Badges only (INACTIVE already stripped at cache layer)
+items.filter((item) => item.type === "BADGE");
 
-// Active accessories only
-items.filter((item) => item.type === "ACCESSORY" && item.status === "ACTIVE");
+// Accessories only
+items.filter((item) => item.type === "ACCESSORY");
+
+// Decorations only
+items.filter((item) => item.type === "DECORATION");
 
 // Items with specific metadata
 items.filter((item) => item.type === "ITEM" && item.metadata?.category === "rare");
 ```
+
+Note: `visitor.inventoryItems` / `user.inventoryItems` are USER-GRANTED
+items (not the ecosystem cache). Their `status` field means "has this user
+still got the item, or was it revoked?" — that filter is unrelated to the
+ecosystem-level INACTIVE strip and should stay in place.
 
 ## Notes
 

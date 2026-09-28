@@ -22,7 +22,17 @@ export const ConfirmationModal = ({
   return (
     <div className="modal-container">
       <div className="modal">
-        <h4>{title}</h4>
+        <div className="modal-header flex gap-2 grid-cols-2">
+          <h4 className="flex-grow text-left">{title}</h4>
+          <a
+            className="pt-2 cursor-pointer"
+            onClick={handleToggleShowConfirmationModal}
+            aria-label="Close"
+            title="Close"
+          >
+            <img src="https://sdk-style.s3.amazonaws.com/icons/x.svg" alt="" aria-hidden="true" />
+          </a>
+        </div>
         <p>{message}</p>
         <div className="actions">
           <button

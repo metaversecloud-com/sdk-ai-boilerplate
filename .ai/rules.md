@@ -41,9 +41,18 @@ SDK USAGE POLICY
 - Wrap SDK calls in try/catch and either:
   - return JSON `{ success: boolean, ... }`, or
   - throw and let server/errorHandler.ts handle it (follow existing controllers' pattern).
-- User.create requires `profileId` in credentials.
-  - Self (user acting on their own behalf): `profileId` is already in the credentials from `req.query` — use `User.create({ credentials })`.
-  - Cross-user (user triggering an action on another user, e.g., admin awarding a badge): override `profileId` with the target user's — use `User.create({ credentials: { ...credentials, profileId: recipientProfileId } })`.
+- `User.create` requires `profileId` at BOTH the top level AND inside credentials — same value in both, always the TARGET's profileId. Passing it only inside credentials silently returns a User bound to the wrong record; reads look empty and writes go to the wrong place.
+  - Self (user acting on their own behalf):
+    ```ts
+    await User.create({ profileId, credentials: { ...credentials, profileId } });
+    ```
+  - Cross-user (user triggering an action on another user, e.g., admin awarding a badge; owner acting on peer state):
+    ```ts
+    await User.create({
+      profileId: recipientProfileId,
+      credentials: { ...credentials, profileId: recipientProfileId },
+    });
+    ```
   - See `.ai/examples/awardBadge.md` for a full example.
 - **Inventory & Experience Points**: When prompted to add an inventory system and Experience Points are not explicitly mentioned, ask if the "Experience Points" ecosystem item should be integrated. XP should always be stored as an inventory item quantity — never in data objects. See `.ai/examples/experiencePoints.md`.
 - **forceRefreshInventory (REQUIRED for any app with badges or inventory)**: Whenever an app uses ecosystem inventory items (badges, decorations, seeds, etc.), the client MUST read `forceRefreshInventory` from URL search params and pass it as a query param to the game-state endpoint. This allows Topia to bust the server's inventory cache when new items are uploaded. Without this, newly added badges or items won't appear until the cache expires (up to 24h).
