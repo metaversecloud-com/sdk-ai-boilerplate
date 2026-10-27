@@ -147,6 +147,19 @@ Create a `.env` file in the root directory. See `.env-example` for a template.
 
 - [Topia Production Account Dashboard](https://topia.io/t/dashboard/integrations)
 
+## Deployment
+
+This repo only builds an image. On every push to `dev`, CI pushes it to the shared dev ECR under
+the mutable tag `sdk-example:<repo>`; a merged PR into `main` cuts a release for prod. No Kubernetes
+manifests live here.
+
+What runs where is declared in [`metaversecloud-com/sdk-gitops`](https://github.com/metaversecloud-com/sdk-gitops): one directory per app,
+`apps/<repo>/services/<svc>/` (Deployment, Service, Ingress) and `apps/<repo>/envs/<env>/`
+(kustomization, `config.json`, ConfigMap, SealedSecret, KEDA HTTPScaledObject). Argo CD Image
+Updater pins the current digest of the tag there, so a fork of this template is enrolled by adding its
+own `apps/<repo>/` copied from a sibling app, an `applicationRefs` entry and a host on the shared
+interceptor Ingress — see that repo's README.
+
 ## Getting Started
 
 ```bash
