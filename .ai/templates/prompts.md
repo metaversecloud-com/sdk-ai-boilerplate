@@ -18,8 +18,34 @@ Add a badges system to this app:
 ```
 Add cached inventory for badges (see sdk-ai-boilerplate examples/inventoryCache.md):
 1. Add EcosystemFactory to topiaInit.ts
-2. Create inventoryCache.ts with 24-hour TTL cache
+2. Create inventoryCache.ts with 6-hour TTL cache
 3. Export from utils/index.ts
+```
+
+### Add Standalone Trophy Asset
+```
+Add a standalone Trophy dropped asset with Leaderboard + Badges tabs
+(see sdk-ai-boilerplate examples/trophyAsset.md):
+1. Define a new uniqueName (e.g. MyApp_trophy) and iframe URL ?screen=trophy
+2. Create handleGetTrophy controller returning leaderboard rows + badges grid
+   in a single response, including the caller's own row below the top N
+3. Add a Trophy page that fetches once and switches between LeaderboardTab
+   and BadgesTab locally
+4. Reuse the BadgesTab grayscale/tooltip pattern from examples/badges.md
+5. (Optional) Admin-only "Reset Leaderboard" with a ConfirmationModal —
+   badges must NOT be revoked
+```
+
+### Add Badge Groups (Categories)
+```
+Group badges by category in the Trophy badges grid (see sdk-ai-boilerplate
+examples/trophyAsset.md section "Badge groups"):
+1. Add metadata.group and metadata.sortOrder to each BADGE item in the
+   inventory ZIP (see docs/claude/inventory-zip-format.md)
+2. Carry group + sortOrder into getBadges output
+3. Hard-code the display order of groups in app code; metadata picks which
+   group a badge is in, app code picks group ordering
+4. Render each group as its own section inside BadgesTab
 ```
 
 ### Award Badge to Visitor
@@ -343,6 +369,8 @@ Add a collectibles/items system:
 | Feature | Prompt |
 |---------|--------|
 | Badges | "Add badges system (see sdk-ai-boilerplate examples/badges.md)" |
+| Trophy Asset | "Add standalone Trophy asset with Leaderboard + Badges tabs (see sdk-ai-boilerplate examples/trophyAsset.md)" |
+| Badge Groups | "Add badge groups to Trophy grid (see sdk-ai-boilerplate examples/trophyAsset.md 'Badge groups')" |
 | Inventory Cache | "Add cached inventory (see sdk-ai-boilerplate examples/inventoryCache.md)" |
 | Award Badge | "Add badge awarding (see sdk-ai-boilerplate examples/awardBadge.md)" |
 | Experience Points | "Add XP system (see sdk-ai-boilerplate examples/experiencePoints.md)" |

@@ -58,7 +58,8 @@ This folder contains guidelines and examples for AI assistants working with Topi
 | `examples/awardBadge.md` | Grant inventory items (badges) with toast notifications |
 | `examples/badges.md` | Complete badges system: ecosystem cache, visitor inventory, UI display |
 | `examples/experiencePoints.md` | Grant, read, and display XP via inventory item |
-| `examples/inventoryCache.md` | Cache ecosystem inventory items with 24h TTL |
+| `examples/inventoryCache.md` | Cache ecosystem inventory items with 6h TTL |
+| `examples/trophyAsset.md` | Standalone Trophy asset with Leaderboard + Badges tabs (and badge groups) |
 
 ### Asset Management
 | File | SDK Feature |

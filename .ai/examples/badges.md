@@ -168,7 +168,7 @@ export const handleGetConfiguration = async (req: Request, res: Response) => {
 See `examples/inventoryCache.md` for the full implementation. Key points:
 
 - Uses `EcosystemFactory` from `@rtsdk/topia`
-- Caches inventory items with 24-hour TTL
+- Caches inventory items with 6-hour TTL
 - Falls back to stale cache on API failure
 
 **Required:** Add `EcosystemFactory` to `topiaInit.ts`:
@@ -183,7 +183,7 @@ export { Ecosystem };
 
 ### forceRefreshInventory
 
-When new badge items are uploaded to the ecosystem, the server's inventory cache (24h TTL) may serve stale data. To support cache busting, the client must read the `forceRefreshInventory` search param and pass it to the game-state endpoint.
+When new badge items are uploaded to the ecosystem, the server's inventory cache (6h TTL) may serve stale data. To support cache busting, the client must read the `forceRefreshInventory` search param and pass it to the game-state endpoint.
 
 In your page component that fetches game state (e.g. `Home.tsx`):
 
@@ -243,6 +243,37 @@ case SET_CONFIG: {
   };
 }
 ```
+
+### Rendering rule — always ecosystem-driven
+
+The grid **must iterate over the ecosystem catalog** (`badges` from the server) and **use each badge's `icon` field** for every tile. Ownership (`visitorInventory`) only controls whether `filter: grayscale(1)` is applied — it never controls which tiles render or where their art comes from.
+
+**Do this:**
+
+```tsx
+{Object.values(badges).map((badge) => {
+  const hasBadge = Boolean(visitorInventory?.badges?.[badge.name]);
+  const style = hasBadge ? { filter: "none" } : { filter: "grayscale(1)" };
+  return <img src={badge.icon} alt={badge.name} style={style} />;
+})}
+```
+
+**Don't do this** (the Birdwatch pre-fix bug — produces blank tiles for any badge the player hasn't earned yet):
+
+```tsx
+// ❌ Iterates over a hardcoded badge-name list, pulls icons only from visitor
+//    inventory → every unowned tile falls back to a blank placeholder.
+const BUILTIN_BADGES = [{ name: "First Sighting" }, { name: "Avid Birder" }, ...];
+{BUILTIN_BADGES.map((b) => {
+  const earned = visitorInventory?.[b.name];
+  const icon = earned?.icon;             // ← undefined for every unowned tile
+  return icon ? <img src={icon} /> : <div className="placeholder" />;
+})}
+```
+
+Why this matters: `visitorInventory` only contains badges the player **already owns**, so pulling icons from it leaves every locked tile without a source. The ecosystem catalog is the full grid; the visitor's inventory is the *flags*, never the *art*.
+
+If the app has a hardcoded list of expected badge names (for ordering, grouping, descriptions), **join it to the ecosystem catalog by name** — don't let the catalog be optional. A missing name should log a warning, not silently render a blank tile.
 
 ### UI Display with Tabs
 
@@ -325,7 +356,7 @@ await visitor.fireToast({
 | ---------------------------------- | --------------------------------------- |
 | `server/utils/getBadges.ts`        | Get all active badges from ecosystem    |
 | `server/utils/getVisitorBadges.ts` | Extract badges from visitor inventory   |
-| `server/utils/inventoryCache.ts`   | Caches ecosystem inventory with 24h TTL |
+| `server/utils/inventoryCache.ts`   | Caches ecosystem inventory with 6h TTL |
 | `server/utils/topiaInit.ts`        | Adds EcosystemFactory export            |
 | `client/src/context/types.ts`      | BadgeType, VisitorInventoryType         |
 | `client/src/context/reducer.ts`    | Handles badges in SET_CONFIG            |
@@ -335,3 +366,4 @@ await visitor.fireToast({
 
 - `inventoryCache.md` - Ecosystem inventory caching
 - `awardBadge.md` - Awarding badges to visitors
+- `trophyAsset.md` - Standalone Trophy asset with Leaderboard + Badges tabs, plus badge groups (categories) driven off inventory metadata. Builds on the component example below.

@@ -59,6 +59,7 @@ SDK USAGE POLICY
   - Client: `const forceRefreshInventory = searchParams.get("forceRefreshInventory") === "true";` then pass to `backendAPI.get("/game-state", { params: { forceRefreshInventory } })`.
   - Server: `const forceRefreshInventory = req.query.forceRefreshInventory === "true";` then pass to `getBadges(credentials, forceRefreshInventory)` or `getCachedInventoryItems({ credentials, forceRefresh: forceRefreshInventory })`.
   - See `.ai/examples/badges.md` section "forceRefreshInventory" and `.ai/examples/inventoryCache.md` section "Pass forceRefreshInventory from the Client" for full implementation.
+- **Badge grid rendering (REQUIRED)**: A badge tile's icon MUST come from the **ecosystem catalog**, not from `visitorInventory`. Iterate over the catalog returned by the server; use `badge.icon` for every tile; apply `filter: grayscale(1)` only when the badge is not owned. Using `visitorInventory` as the icon source renders every unowned tile blank — this was Birdwatch's bug. See `.ai/examples/badges.md` section "Rendering rule — always ecosystem-driven".
 - Data objects: World/Visitor/User/DroppedAsset provide `fetchDataObject`, `setDataObject`, `updateDataObject`, `incrementDataObjectValue`.
   - Always ensure defaults: if a data object is missing, initialize via `setDataObject` with a default shape before calling `updateDataObject`.
   - Follow the pattern: `handleGetGameState.ts` → `getDroppedAsset` → `initializeDroppedAssetDataObject`. If defaults are unclear, STOP and ask.
