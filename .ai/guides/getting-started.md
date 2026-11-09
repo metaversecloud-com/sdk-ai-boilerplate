@@ -65,14 +65,13 @@ sdk-ai-boilerplate/
 
 These files should **not be modified** as they contain critical framework code:
 
-| File | Purpose |
-|------|---------|
-| `client/src/App.tsx` | Main routing and layout |
-| `client/src/components/PageContainer.tsx` | Page wrapper component |
-| `client/src/utils/backendAPI.ts` | Axios client with credential injection |
-| `client/src/utils/setErrorMessage.ts` | Error state management |
-| `server/utils/getCredentials.ts` | Credential extraction from requests |
-| `server/utils/errorHandler.ts` | Standardized error responses |
+| File                                  | Purpose                                |
+| ------------------------------------- | -------------------------------------- |
+| `client/src/App.tsx`                  | Main routing and layout                |
+| `client/src/utils/backendAPI.ts`      | Axios client with credential injection |
+| `client/src/utils/setErrorMessage.ts` | Error state management                 |
+| `server/utils/getCredentials.ts`      | Credential extraction from requests    |
+| `server/utils/errorHandler.ts`        | Standardized error responses           |
 
 ---
 
@@ -108,14 +107,14 @@ GOOGLESHEETS_SHEET_ID=your_sheet_id
 
 ### Environment Variables Explained
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `INTERACTIVE_KEY` | Yes | Public key from Topia Gateway |
-| `INTERACTIVE_SECRET` | Yes | Secret key for JWT signing |
-| `INSTANCE_DOMAIN` | Yes | Topia API domain (usually `api.topia.io`) |
-| `INSTANCE_PROTOCOL` | Yes | Protocol (`https`) |
-| `API_KEY` | No | Admin API key for elevated permissions |
-| `GOOGLESHEETS_*` | No | Google Sheets integration for analytics |
+| Variable             | Required | Description                               |
+| -------------------- | -------- | ----------------------------------------- |
+| `INTERACTIVE_KEY`    | Yes      | Public key from Topia Gateway             |
+| `INTERACTIVE_SECRET` | Yes      | Secret key for JWT signing                |
+| `INSTANCE_DOMAIN`    | Yes      | Topia API domain (usually `api.topia.io`) |
+| `INSTANCE_PROTOCOL`  | Yes      | Protocol (`https`)                        |
+| `API_KEY`            | No       | Admin API key for elevated permissions    |
+| `GOOGLESHEETS_*`     | No       | Google Sheets integration for analytics   |
 
 ### Getting Your Interactive Credentials
 
@@ -143,6 +142,7 @@ npm run dev
 ```
 
 This runs both:
+
 - **Server**: `http://localhost:3000` (Express API)
 - **Client**: `http://localhost:5173` (Vite dev server)
 
@@ -380,12 +380,12 @@ This creates production builds in both `client/dist` and `server/build`.
 
 ### Hosting Recommendations
 
-| Provider | Best For |
-|----------|----------|
-| Vercel | Simple deployments, automatic HTTPS |
-| Railway | Full-stack apps with databases |
-| AWS/GCP | Production scale, custom infrastructure |
-| Heroku | Quick prototypes |
+| Provider | Best For                                |
+| -------- | --------------------------------------- |
+| Vercel   | Simple deployments, automatic HTTPS     |
+| Railway  | Full-stack apps with databases          |
+| AWS/GCP  | Production scale, custom infrastructure |
+| Heroku   | Quick prototypes                        |
 
 ---
 
