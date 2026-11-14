@@ -262,6 +262,14 @@ TESTING (JEST)
 - Assert: HTTP status, JSON schema, correct SDK method & args, credentials flow into World.create/DroppedAsset.create.
 - Note: Source may import with `.js` suffix for runtime ESM; Jest strips `.js` only for relative paths.
 
+E2E TESTS (PLAYWRIGHT)
+
+- `e2e/` drives the real app in a browser against a fake Topia API; the `E2E` PR check runs it on every push. See `e2e/README.md`.
+- Keep `e2e/tests/platform/` identical across apps. List every route that calls `getCredentials` in `e2e/app.config.ts`.
+- Replace `e2e/tests/app/` with tests for the app's own pages and rules (right and wrong paths, admin vs player, data written back to Topia).
+- If the app calls a Topia endpoint the mock doesn't implement, add it to `e2e/mock-topia/server.mjs`; tests fail until you do.
+- A bug that can't be fixed yet gets a test marked `test.fail(true, "<issue>")`; remove the marker in the same change as the fix.
+
 DELIVERABLE FORMAT (WHEN IMPLEMENTING CHANGES)
 Return these sections:
 
@@ -311,6 +319,7 @@ WORKFLOW
    - Rewrite README.md to describe the new app (not the boilerplate). Use the boilerplate's own [`README.md`](../README.md) as the structural reference — it is the canonical template and is kept in sync with this rules doc. Keep every section heading from the template (Introduction, Key Features, Required Assets with Unique Names, Technical Architecture (Data Objects), API Endpoints, Environment Variables, Getting Started, For Developers) and fill them in with the new app's specifics.
    - **Required Assets with Unique Names** — If the app uses dropped assets found by unique name, document every unique name pattern in a table in the README. This is critical for world builders setting up the app. Include both fixed names (manually placed) and dynamic patterns (created at runtime).
    - Rewrite server/tests/routes.test.ts to test the new app's routes; update SDK mock.
+   - Update `e2e/app.config.ts`, replace `e2e/tests/app/` with the app's own e2e tests, and run `cd e2e && npm test`.
 6. EXPLAIN — provide the Deliverable Format output.
 
 DEFINITION OF DONE
