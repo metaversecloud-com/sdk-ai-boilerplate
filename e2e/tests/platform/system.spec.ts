@@ -1,4 +1,5 @@
 // Shared by every SDK app: keep this file identical across repos. App-specific tests go in tests/app.
+import { APP_SHELL_MARKER } from "../../app.config";
 import { INTERACTIVE_SECRET } from "../../constants";
 import { expect, test } from "../../fixtures";
 
@@ -25,5 +26,5 @@ test("unknown pages fall back to the app shell", async ({ request }) => {
 
   expect(response.ok()).toBe(true);
   expect(response.headers()["content-type"]).toContain("text/html");
-  expect(await response.text()).toContain('id="root"');
+  expect(await response.text()).toContain(APP_SHELL_MARKER);
 });

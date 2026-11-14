@@ -1,10 +1,14 @@
-// Shared by every SDK app: keep this file identical across repos. Routes come from app.config.ts.
+// Shared by every SDK app: keep this file identical across repos. Routes and known bugs come from
+// app.config.ts.
 import { CREDENTIALED_ROUTES } from "../../app.config";
 import { expect, test } from "../../fixtures";
 
 for (const route of CREDENTIALED_ROUTES) {
+  const bugs = route.knownBugs ?? {};
+
   test.describe(`${route.method.toUpperCase()} ${route.path}`, () => {
     test("rejects a request without session credentials", async ({ request, world }) => {
+      test.fail(!!bugs.acceptsMissingCredentials, bugs.acceptsMissingCredentials);
       await world.seed();
 
       const response = await request[route.method](`/api${route.path}`, { data: route.data });
@@ -14,6 +18,7 @@ for (const route of CREDENTIALED_ROUTES) {
     });
 
     test("rejects credentials signed for another app's public key", async ({ request, world }) => {
+      test.fail(!!bugs.acceptsForeignCredentials, bugs.acceptsForeignCredentials);
       await world.seed();
 
       const response = await request[route.method](world.api(route.path, { interactivePublicKey: "someone-else" }), {
@@ -25,10 +30,7 @@ for (const route of CREDENTIALED_ROUTES) {
     });
 
     test("names the credential problem instead of failing further down", async ({ request, world }) => {
-      // Known bug, tracked in EXP-428 (#6): getCredentials returns { error } instead of throwing, so the
-      // request carries on with empty credentials and only fails on a later Topia call. Remove this
-      // line together with the fix in server/utils/getCredentials.ts.
-      test.fail(true, "EXP-428 #6: getCredentials doesn't throw");
+      test.fail(!!bugs.unnamedCredentialError, bugs.unnamedCredentialError);
       await world.seed();
 
       const response = await request[route.method](world.api(route.path, { interactivePublicKey: "someone-else" }), {

@@ -268,7 +268,7 @@ E2E TESTS (PLAYWRIGHT)
 - Keep `e2e/tests/platform/` identical across apps. List every route that calls `getCredentials` in `e2e/app.config.ts`.
 - Replace `e2e/tests/app/` with tests for the app's own pages and rules (right and wrong paths, admin vs player, data written back to Topia).
 - If the app calls a Topia endpoint the mock doesn't implement, add it to `e2e/mock-topia/server.mjs`; tests fail until you do.
-- A bug that can't be fixed yet gets a test marked `test.fail(true, "<issue>")`; remove the marker in the same change as the fix.
+- A bug that can't be fixed yet gets a test marked `test.fail(true, "<issue>")`; remove the marker in the same change as the fix. For the platform tests, record it per route in `knownBugs` in `e2e/app.config.ts` instead of editing the specs.
 
 DELIVERABLE FORMAT (WHEN IMPLEMENTING CHANGES)
 Return these sections:

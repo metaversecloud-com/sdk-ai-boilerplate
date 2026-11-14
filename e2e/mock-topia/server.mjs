@@ -71,6 +71,15 @@ const readBody = (req) =>
     });
   });
 
+// interactiveNonce from an InteractiveJWT's payload. The signature isn't checked.
+const jwtNonce = (token) => {
+  try {
+    return JSON.parse(Buffer.from(String(token).split(".")[1], "base64url").toString()).interactiveNonce;
+  } catch {
+    return undefined;
+  }
+};
+
 const send = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body ?? {}));
@@ -290,6 +299,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname.startsWith("/api/") && req.headers.publickey !== PUBLIC_KEY) {
       return send(res, 401, { message: "Invalid PublicKey header" });
+    }
+    // Like the public API, world-scoped calls need an API key or a visitor's interactive JWT. Without
+    // this, an app that forwards missing credentials to the SDK would pass against the mock.
+    if (url.pathname.startsWith("/api/v1/world/") && !req.headers.authorization && !jwtNonce(req.headers.interactivejwt)) {
+      return send(res, 401, { message: "Missing API key or InteractiveJWT with an interactiveNonce" });
     }
 
     for (const [method, pattern, handler] of routes) {
