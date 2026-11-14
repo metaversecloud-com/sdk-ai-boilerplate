@@ -1,5 +1,5 @@
 // Shared by every SDK app: keep this file identical across repos. App-specific tests go in tests/app.
-import { APP_SHELL_MARKER } from "../../app.config";
+import { APP_SHELL_MARKER, ENTRY_PAGE } from "../../app.config";
 import { INTERACTIVE_SECRET } from "../../constants";
 import { expect, test } from "../../fixtures";
 
@@ -22,6 +22,7 @@ test("health endpoint keeps the contract monitoring relies on", async ({ request
 });
 
 test("unknown pages fall back to the app shell", async ({ request }) => {
+  test.skip(ENTRY_PAGE === null, "the app has no page");
   const response = await request.get("/some/deep/link");
 
   expect(response.ok()).toBe(true);

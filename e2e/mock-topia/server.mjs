@@ -5,7 +5,7 @@
 //
 // State is partitioned by urlSlug, so every test seeds its own world and tests can run in parallel.
 // Test-only control routes live under /__mock:
-//   POST /__mock/worlds/:urlSlug   seed a world  { dataObject, assets, visitors }
+//   POST /__mock/worlds/:urlSlug   seed a world  { dataObject, assets, visitors, latencyMs?, delays? }
 //   GET  /__mock/worlds/:urlSlug   read world state + event log (particles, toasts, grants, analytics, ...)
 //   PATCH /__mock/worlds/:urlSlug/visitors/:id   change visitor fields mid-test (position, isAdmin, ...)
 //   GET  /__mock/users/:profileId  read a user data object
@@ -165,7 +165,17 @@ const routes = [
     /^\/api\/v1\/particles$/,
     (_, __, query) => [200, query.get("name") ? PARTICLES.filter((p) => p.name === query.get("name")) : PARTICLES],
   ],
-  ["PUT", /^\/api\/v1\/analytics\/public-key-analytics$/, () => [200, {}]],
+  [
+    "PUT",
+    /^\/api\/v1\/analytics\/public-key-analytics$/,
+    (_, body) => {
+      // Not world-scoped: each analytic names its world, so it's logged there as an "analytics" event.
+      for (const analytic of body.analytics || []) {
+        getWorld(String(analytic.urlSlug)).events.push({ ...analytic, type: "analytics", source: "public-key" });
+      }
+      return [200, {}];
+    },
+  ],
 
   // ---- leaderboard app (sdk-leaderboard), called by the boilerplate's example route ----
   [
@@ -354,10 +364,24 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { message: "Invalid PublicKey header" });
     }
     // Like the public API, world-scoped calls need an API key or a visitor's interactive JWT. Without
-    // this, an app that forwards missing credentials to the SDK would pass against the mock.
-    if (url.pathname.startsWith("/api/v1/world/") && !req.headers.authorization && !jwtNonce(req.headers.interactivejwt)) {
+    // this, an app that forwards missing credentials to the SDK would pass against the mock. So does
+    // public-key-analytics (the real route runs interactiveKeyValidator + gameEngineValidator).
+    const needsSession = url.pathname.startsWith("/api/v1/world/") || url.pathname === "/api/v1/analytics/public-key-analytics";
+    if (needsSession && !req.headers.authorization && !jwtNonce(req.headers.interactivejwt)) {
       return send(res, 401, { message: "Missing API key or interactive JWT with an interactiveNonce" });
     }
+
+    // Seeded latency, so concurrent requests overlap the way they do against the real API instead of
+    // running one after another: latencyMs holds every call into the world, delays: { "<substring of
+    // 'METHOD /api/v1/world/...'>": ms } only the matching ones (e.g. "/update-data-object": 300), so
+    // a test can line up two requests deterministically.
+    const worldSlug = url.pathname.match(/^\/api\/v1\/world\/([^/]+)\//)?.[1];
+    const seeded = worldSlug ? worlds.get(decodeURIComponent(worldSlug)) : undefined;
+    let waitMs = seeded?.latencyMs || 0;
+    for (const [match, ms] of Object.entries(seeded?.delays || {})) {
+      if (`${req.method} ${url.pathname}`.includes(match)) waitMs += ms;
+    }
+    if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
 
     // Handlers may be async (e.g. to simulate latency).
     for (const [method, pattern, handler] of routes) {
@@ -372,7 +396,6 @@ const server = http.createServer(async (req, res) => {
     // fixture fails the test that triggered one.
     console.error(`[mock-topia] unhandled ${req.method} ${url.pathname}`);
     const call = `${req.method} ${url.pathname}`;
-    const worldSlug = url.pathname.match(/^\/api\/v1\/world\/([^/]+)\//)?.[1];
     if (worldSlug) getWorld(decodeURIComponent(worldSlug)).unhandled.push(call);
     else unhandledOutsideWorlds.push(call);
     send(res, 501, { message: `mock-topia: unhandled ${req.method} ${url.pathname}` });

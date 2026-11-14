@@ -19,8 +19,16 @@ export type KnownBugs = {
 
 export type RouteSpec = {
   method: "get" | "post" | "put" | "delete";
-  /** Path under /api, without the query string. */
+  /** Path under basePath, without the query string. */
   path: string;
+  /** Where the router is mounted. Default "/api"; e.g. "/webhook" for a separate webhook router. */
+  basePath?: string;
+  /**
+   * Where the route reads the session credentials. "query" (default) is the iframe's backendAPI call.
+   * "body": webhooks (asset clicks, zone events) get them as top-level fields of the JSON body, and
+   * read them with getCredentials(req.body). The platform tests then merge them into `data`.
+   */
+  credentialsIn?: "query" | "body";
   data?: Record<string, unknown>;
   knownBugs?: KnownBugs;
 };
@@ -32,13 +40,20 @@ const GET_CREDENTIALS_DOESNT_THROW = "EXP-428 #6: getCredentials doesn't throw";
 /**
  * API routes that read the session credentials (getCredentials). Each one must reject missing or
  * foreign credentials and must never send the interactive secret to the browser. List them all.
+ *
+ * Except server-sent-event streams (e.g. GET /sse): with valid credentials the response never ends, so
+ * the platform tests can't read its body and time out. Cover an SSE route's credential checks in
+ * tests/app instead (open it with page.request or fetch + AbortController and check the status).
  */
 export const CREDENTIALED_ROUTES: RouteSpec[] = [
   { method: "get", path: "/game-state", knownBugs: { unnamedCredentialError: GET_CREDENTIALS_DOESNT_THROW } },
 ];
 
-/** Page the app opens in its iframe; the platform tests load it with valid credentials. */
-export const ENTRY_PAGE = "/";
+/**
+ * Page the app opens in its iframe; the platform tests load it with valid credentials. null if the app
+ * has no page (no client/, driven only by webhooks): the platform tests that load a page are skipped.
+ */
+export const ENTRY_PAGE: string | null = "/";
 
 /** Bugs seen when loading ENTRY_PAGE (only leaksSecret applies). */
 export const ENTRY_PAGE_KNOWN_BUGS: Pick<KnownBugs, "leaksSecret"> = {};

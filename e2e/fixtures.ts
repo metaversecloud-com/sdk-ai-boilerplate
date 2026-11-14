@@ -23,6 +23,13 @@ export type SeedOptions = {
   badges?: string[];
   /** Further dropped assets in the world, keyed by id. */
   extraAssets?: Record<string, Record<string, unknown>>;
+  /** Delay for every public-API call into the world, so concurrent requests overlap. */
+  latencyMs?: number;
+  /**
+   * Delay for matching public-API calls only: { "<substring of 'METHOD /api/v1/world/...'>": ms }, e.g.
+   * { "PUT /api/v1/world": 300 } or { "/visitors/42/set-data-object": 400 }. Adds to latencyMs.
+   */
+  delays?: Record<string, number>;
 };
 
 /** A visitor inventory entry shaped like GET get-visitor-inventory-items returns it. */
@@ -58,6 +65,8 @@ export class TopiaWorld {
     visitorData = {},
     badges = [],
     extraAssets = {},
+    latencyMs = 0,
+    delays = {},
   }: SeedOptions = {}) {
     const assets: Record<string, any> = { ...extraAssets };
     if (withAsset) {
@@ -76,6 +85,8 @@ export class TopiaWorld {
     const response = await this.request.post(`${MOCK_TOPIA_URL}/__mock/worlds/${this.urlSlug}`, {
       data: {
         dataObject: worldData,
+        latencyMs,
+        delays,
         assets,
         visitors: {
           [VISITOR_ID]: {
@@ -131,7 +142,9 @@ export class TopiaWorld {
       assetId: KEY_ASSET_ID,
       displayName: this.displayName,
       identityId: "identity-1",
-      interactiveNonce: "e2e-nonce",
+      // Unique per world: apps that key state by nonce across worlds (SSE connections, caches) would
+      // otherwise mix up parallel tests.
+      interactiveNonce: `e2e-nonce-${this.urlSlug}`,
       interactivePublicKey: INTERACTIVE_KEY,
       profileId: this.profileId,
       sceneDropId: SCENE_DROP_ID,

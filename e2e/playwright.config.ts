@@ -50,6 +50,9 @@ export default defineConfig({
     baseURL: `http://localhost:${APP_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The app runs in UTC (TZ below, and the image), so the browser does too: dates render the same on
+    // every machine. A test can still pick another zone on purpose with test.use({ timezoneId }).
+    timezoneId: "UTC",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
