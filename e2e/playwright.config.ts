@@ -23,7 +23,8 @@ const appEnv = {
 };
 
 const imageEnvFlags = Object.entries(appEnv)
-  .map(([key, value]) => `-e ${key}=${value}`)
+  // Single-quoted so JSON values survive the shell.
+  .map(([key, value]) => `-e ${key}='${value}'`)
   .join(" ");
 
 const appServer = APP_IMAGE
@@ -34,7 +35,8 @@ const appServer = APP_IMAGE
     }
   : {
       command: "npm run build --prefix .. && npm start --prefix ..",
-      env: appEnv,
+      // The image bakes COMMIT_HASH in and runs in UTC; a local run has to provide both.
+      env: { ...appEnv, COMMIT_HASH: "local", TZ: "UTC" },
       reuseExistingServer: !process.env.CI,
     };
 

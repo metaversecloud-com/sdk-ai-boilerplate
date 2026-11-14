@@ -25,6 +25,19 @@ export type SeedOptions = {
   extraAssets?: Record<string, Record<string, unknown>>;
 };
 
+/** A visitor inventory entry shaped like GET get-visitor-inventory-items returns it. */
+const ownedBadge = (name: string) => ({
+  id: `owned-${name}`,
+  item_id: `owned-${name}`,
+  itemId: `owned-${name}`,
+  name,
+  type: "BADGE",
+  image_url: "",
+  quantity: 1,
+  status: "ACTIVE",
+  item: { id: `owned-${name}`, name, type: "BADGE", image_url: "" },
+});
+
 /** One isolated Topia world in mock-topia, plus helpers to open the app inside it. */
 export class TopiaWorld {
   readonly displayName = "E2E Player";
@@ -72,17 +85,20 @@ export class TopiaWorld {
             landmarkZonesString: inZone ? Object.keys(assets).join(",") : "",
             privateZoneId: "",
             dataObject: visitorData,
-            inventory: badges.map((name) => ({
-              id: `owned-${name}`,
-              item_id: `owned-${name}`,
-              status: "ACTIVE",
-              item: { name, type: "BADGE", image_url: "" },
-            })),
+            inventory: badges.map(ownedBadge),
           },
         },
       },
     });
     if (!response.ok()) throw new Error(`Seeding mock world failed: ${response.status()}`);
+  }
+
+  /** Changes visitor fields mid-test (moveTo, isAdmin, landmarkZonesString, ...). */
+  async updateVisitor(fields: Record<string, unknown>, visitorId = VISITOR_ID) {
+    const response = await this.request.patch(`${MOCK_TOPIA_URL}/__mock/worlds/${this.urlSlug}/visitors/${visitorId}`, {
+      data: fields,
+    });
+    if (!response.ok()) throw new Error(`Updating mock visitor failed: ${response.status()}`);
   }
 
   async state() {
@@ -139,6 +155,15 @@ export class TopiaWorld {
 }
 
 export const test = base.extend<{ world: TopiaWorld }>({
+  // The browser may only talk to the app: anything else (CDNs, analytics, real Topia) is aborted, so a
+  // test can't pass or flake on the network.
+  context: async ({ context }, use) => {
+    await context.route(
+      (url) => !["localhost", "127.0.0.1"].includes(url.hostname),
+      (route) => route.abort(),
+    );
+    await use(context);
+  },
   world: async ({ request }, use, testInfo) => {
     const id = `${testInfo.testId}-${testInfo.repeatEachIndex}-${testInfo.retry}`.replace(/[^a-zA-Z0-9-]/g, "");
     const world = new TopiaWorld(`world-${id}`, `profile-${id}`, request);

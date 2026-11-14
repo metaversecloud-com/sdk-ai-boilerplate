@@ -6,7 +6,8 @@
 // State is partitioned by urlSlug, so every test seeds its own world and tests can run in parallel.
 // Test-only control routes live under /__mock:
 //   POST /__mock/worlds/:urlSlug   seed a world  { dataObject, assets, visitors }
-//   GET  /__mock/worlds/:urlSlug   read world state + event log (particles, toasts, grants, ...)
+//   GET  /__mock/worlds/:urlSlug   read world state + event log (particles, toasts, grants, analytics, ...)
+//   PATCH /__mock/worlds/:urlSlug/visitors/:id   change visitor fields mid-test (position, isAdmin, ...)
 //   GET  /__mock/users/:profileId  read a user data object
 //   GET  /__mock/unhandled         public-API calls the mock didn't recognize, outside any world
 //   GET  /__mock/health
@@ -24,6 +25,19 @@ const INVENTORY_ITEMS = ["Perfect Score", "Lightning Round", "Quiz Master", "Top
   description: `${name} badge`,
   image_path: `https://example.invalid/badges/${i + 1}.png`,
 }));
+
+/** A visitor inventory entry the way GET get-visitor-inventory-items returns it. */
+const ownedItem = (id, item, quantity = 1) => ({
+  id,
+  item_id: item.id,
+  itemId: item.id,
+  quantity,
+  name: item.name,
+  type: item.type,
+  status: item.status,
+  image_url: item.image_path,
+  item: { id: item.id, name: item.name, description: item.description, type: item.type, image_url: item.image_path },
+});
 
 const PARTICLES = ["brain_float", "partyPopper_float", "confetti_float"].map((name, i) => ({ id: `particle-${i + 1}`, name }));
 
@@ -80,17 +94,43 @@ const jwtNonce = (token) => {
   }
 };
 
+// A literal null body stays null (some endpoints answer null), only a missing one becomes {}.
 const send = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(body ?? {}));
+  res.end(JSON.stringify(body === undefined ? {} : body));
 };
 
-// Data-object routes shared by world, dropped asset, visitor and user.
-const dataObjectRoutes = (action, holder, body) => {
-  if (action === "get") return clone(holder.dataObject || {});
+// Like the public API, a write naming a lock.lockId fails with 409 while that lock is held on the same
+// data object; releaseLock: true frees it after the write, otherwise it stays held.
+const heldLocks = new WeakMap(); // data-object holder -> Set of lockIds
+
+const WRITE_ACTIONS = { "set-data-object": "set", "update-data-object": "update", "increment-data-object-value": "increment" };
+const WRITE_ENDPOINTS = Object.keys(WRITE_ACTIONS).join("|");
+
+const readDataObject = (holder) => clone(holder.dataObject || {});
+
+// Data-object writes shared by world, dropped asset, visitor and user. Returns [status, body].
+// Analytics sent with a successful write are logged as "analytics" events in `world` (if given).
+const writeDataObject = (endpoint, holder, body, world) => {
+  const lockId = body.lock?.lockId;
+  if (!heldLocks.has(holder)) heldLocks.set(holder, new Set());
+  const locks = heldLocks.get(holder);
+  if (lockId) {
+    if (locks.has(lockId)) {
+      return [409, { message: "This data object is busy. Another process has acquired this data object lock." }];
+    }
+    locks.add(lockId);
+  }
+  const action = WRITE_ACTIONS[endpoint];
   if (action === "set") holder.dataObject = clone(body.dataObject) || {};
   if (action === "update") holder.dataObject = applyUpdate(holder.dataObject || {}, clone(body.dataObject));
-  return {};
+  if (action === "increment") {
+    const current = body.path.split(".").reduce((node, key) => node?.[key], holder.dataObject) || 0;
+    holder.dataObject = applyUpdate(holder.dataObject || {}, { [body.path]: current + body.amount });
+  }
+  if (lockId && body.lock.releaseLock) locks.delete(lockId);
+  for (const analytic of body.analytics || []) world?.events.push({ ...analytic, type: "analytics" });
+  return [200, {}];
 };
 
 const routes = [
@@ -105,6 +145,16 @@ const routes = [
     },
   ],
   ["GET", /^\/__mock\/worlds\/([^/]+)$/, ([urlSlug]) => [200, getWorld(urlSlug)]],
+  [
+    "PATCH",
+    /^\/__mock\/worlds\/([^/]+)\/visitors\/([^/]+)$/,
+    ([urlSlug, id], body) => {
+      const visitor = getWorld(urlSlug).visitors[id];
+      if (!visitor) return [404, { message: "Visitor not found" }];
+      Object.assign(visitor, clone(body));
+      return [200, { ok: true }];
+    },
+  ],
   ["GET", /^\/__mock\/users\/([^/]+)$/, ([profileId]) => [200, getUser(profileId)]],
   ["GET", /^\/__mock\/unhandled$/, () => [200, unhandledOutsideWorlds]],
 
@@ -132,16 +182,16 @@ const routes = [
   [
     "GET",
     /^\/api\/v1\/user\/dataObjects\/([^/]+)\/get-data-object$/,
-    ([profileId]) => [200, dataObjectRoutes("get", getUser(profileId))],
+    ([profileId]) => [200, readDataObject(getUser(profileId))],
   ],
   [
     "PUT",
-    /^\/api\/v1\/user\/dataObjects\/([^/]+)\/(set|update)-data-object$/,
-    ([profileId, action], body) => [200, dataObjectRoutes(action, getUser(profileId), body)],
+    new RegExp(`^/api/v1/user/dataObjects/([^/]+)/(${WRITE_ENDPOINTS})$`),
+    ([profileId, endpoint], body) => writeDataObject(endpoint, getUser(profileId), body),
   ],
 
   // ---- world ----
-  ["GET", /^\/api\/v1\/world\/([^/]+)\/get-data-object$/, ([slug]) => [200, dataObjectRoutes("get", getWorld(slug))]],
+  ["GET", /^\/api\/v1\/world\/([^/]+)\/get-data-object$/, ([slug]) => [200, readDataObject(getWorld(slug))]],
   [
     "PUT",
     /^\/api\/v1\/world\/([^/]+)\/fire-toast$/,
@@ -152,15 +202,16 @@ const routes = [
   ],
   [
     "PUT",
-    /^\/api\/v1\/world\/([^/]+)\/(set|update)-data-object$/,
-    ([slug, action], body) => [200, dataObjectRoutes(action, getWorld(slug), body)],
+    new RegExp(`^/api/v1/world/([^/]+)/(${WRITE_ENDPOINTS})$`),
+    ([slug, endpoint], body) => writeDataObject(endpoint, getWorld(slug), body, getWorld(slug)),
   ],
   [
     "POST",
     /^\/api\/v1\/world\/([^/]+)\/(particles|set-activity|webhooks)$/,
     ([slug, type], body) => {
       // A webhook body carries its own "type" (e.g. webhookZoneEntered); keep it as webhookType.
-      getWorld(slug).events.push({ ...body, type, ...(body.type && { webhookType: body.type }) });
+      const particleName = type === "particles" ? PARTICLES.find((p) => p.id === body.particleId)?.name : undefined;
+      getWorld(slug).events.push({ ...body, type, ...(body.type && { webhookType: body.type }), ...(particleName && { particleName }) });
       return [200, type === "webhooks" ? { webhookId: `webhook-${++assetCounter}` } : {}];
     },
   ],
@@ -191,15 +242,15 @@ const routes = [
     /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)\/data-object$/,
     ([slug, id]) => {
       const asset = getWorld(slug).assets[id];
-      return asset ? [200, dataObjectRoutes("get", asset)] : [404, { message: "Asset not found" }];
+      return asset ? [200, readDataObject(asset)] : [404, { message: "Asset not found" }];
     },
   ],
   [
     "PUT",
-    /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)\/(set|update)-data-object$/,
-    ([slug, id, action], body) => {
+    new RegExp(`^/api/v1/world/([^/]+)/assets/([^/]+)/(${WRITE_ENDPOINTS})$`),
+    ([slug, id, endpoint], body) => {
       const asset = getWorld(slug).assets[id];
-      return asset ? [200, dataObjectRoutes(action, asset, body)] : [404, { message: "Asset not found" }];
+      return asset ? writeDataObject(endpoint, asset, body, getWorld(slug)) : [404, { message: "Asset not found" }];
     },
   ],
   [
@@ -207,9 +258,8 @@ const routes = [
     /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)$/,
     ([slug, id]) => {
       const asset = getWorld(slug).assets[id];
-      if (!asset) return [404, { message: "Asset not found" }];
-      const { dataObject, ...details } = asset;
-      return [200, details];
+      // Like the real endpoint, includes the data object: DroppedAsset.get fills droppedAsset.dataObject from it.
+      return asset ? [200, clone(asset)] : [404, { message: "Asset not found" }];
     },
   ],
   [
@@ -252,15 +302,15 @@ const routes = [
     /^\/api\/v1\/world\/([^/]+)\/visitors\/([^/]+)\/get-data-object$/,
     ([slug, id]) => {
       const visitor = getWorld(slug).visitors[id];
-      return visitor ? [200, dataObjectRoutes("get", visitor)] : [404, { message: "Visitor not found" }];
+      return visitor ? [200, readDataObject(visitor)] : [404, { message: "Visitor not found" }];
     },
   ],
   [
     "PUT",
-    /^\/api\/v1\/world\/([^/]+)\/visitors\/([^/]+)\/(set|update)-data-object$/,
-    ([slug, id, action], body) => {
+    new RegExp(`^/api/v1/world/([^/]+)/visitors/([^/]+)/(${WRITE_ENDPOINTS})$`),
+    ([slug, id, endpoint], body) => {
       const visitor = getWorld(slug).visitors[id];
-      return visitor ? [200, dataObjectRoutes(action, visitor, body)] : [404, { message: "Visitor not found" }];
+      return visitor ? writeDataObject(endpoint, visitor, body, getWorld(slug)) : [404, { message: "Visitor not found" }];
     },
   ],
   [
@@ -276,10 +326,13 @@ const routes = [
       const visitor = world.visitors[id];
       const item = INVENTORY_ITEMS.find((i) => i.id === body.itemId);
       if (!visitor || !item) return [404, { message: "Visitor or item not found" }];
-      const granted = { id: `user-item-${++assetCounter}`, item_id: item.id, status: "ACTIVE", quantity: body.quantity, item: { ...item, image_url: item.image_path } };
-      visitor.inventory = [...(visitor.inventory || []), granted];
+      // Like the public API, granting an item the visitor already owns adds to its quantity.
+      visitor.inventory ||= [];
+      let owned = visitor.inventory.find((entry) => entry.item_id === item.id);
+      if (owned) owned.quantity += body.quantity ?? 1;
+      else visitor.inventory.push((owned = ownedItem(`user-item-${++assetCounter}`, item, body.quantity ?? 1)));
       world.events.push({ type: "grant-item", visitorId: id, name: item.name });
-      return [200, { inventoryItem: item.id, user_id: visitor.profileId, quantity: body.quantity }];
+      return [200, { inventoryItem: item.id, user_id: visitor.profileId, quantity: owned.quantity }];
     },
   ],
   [
@@ -295,7 +348,7 @@ const routes = [
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
-    const body = ["POST", "PUT", "DELETE"].includes(req.method) ? await readBody(req) : {};
+    const body = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
     if (url.pathname.startsWith("/api/") && req.headers.publickey !== PUBLIC_KEY) {
       return send(res, 401, { message: "Invalid PublicKey header" });
@@ -303,14 +356,15 @@ const server = http.createServer(async (req, res) => {
     // Like the public API, world-scoped calls need an API key or a visitor's interactive JWT. Without
     // this, an app that forwards missing credentials to the SDK would pass against the mock.
     if (url.pathname.startsWith("/api/v1/world/") && !req.headers.authorization && !jwtNonce(req.headers.interactivejwt)) {
-      return send(res, 401, { message: "Missing API key or InteractiveJWT with an interactiveNonce" });
+      return send(res, 401, { message: "Missing API key or interactive JWT with an interactiveNonce" });
     }
 
+    // Handlers may be async (e.g. to simulate latency).
     for (const [method, pattern, handler] of routes) {
       if (method !== req.method) continue;
       const match = url.pathname.match(pattern);
       if (!match) continue;
-      const [status, payload] = handler(match.slice(1).map(decodeURIComponent), body, url.searchParams);
+      const [status, payload] = await handler(match.slice(1).map(decodeURIComponent), body, url.searchParams);
       return send(res, status, payload);
     }
 

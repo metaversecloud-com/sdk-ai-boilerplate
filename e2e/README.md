@@ -39,6 +39,27 @@ Every test gets its own world, so the suite runs fully in parallel. Each test al
 calls a public-API endpoint the mock doesn't implement, so an `@rtsdk/topia` upgrade that starts using
 new endpoints can't pass silently. A full app example lives in sdk-quiz (`e2e/tests`).
 
+## What the mock mirrors
+
+- `GET /world/:slug/assets/:id` returns the asset with its `dataObject`, like the real API (`DroppedAsset.get` fills `droppedAsset.dataObject` from it).
+- Data-object writes (`set`, `update` and `increment-data-object-value`, on world, asset, visitor and user) honour `lock`: a held `lockId` answers 409, `releaseLock: true` frees it after the write, otherwise it stays held. Locks are per data object.
+- `analytics` sent with a successful write are logged as `analytics` events; `particles` events carry `particleName`.
+- Visitor inventory entries have the real top-level fields (`name`, `image_url`, `type`, `item_id`, `itemId`, `quantity`, `status`) plus the nested `item`. Granting an owned item adds to its quantity.
+- `PATCH /__mock/worlds/:slug/visitors/:id` (`world.updateVisitor({...})`) changes visitor fields mid-test. Route handlers may be async.
+- The browser may only reach localhost: `fixtures.ts` aborts every other request.
+
+### Extensions other apps added
+
+Not in the boilerplate because they're app-specific. Copy from the PR when an app needs one.
+
+| Extension | PR |
+|---|---|
+| Fake S3 (uploads) | sdk-scavenger-hunt#56, sdk-quest#53 |
+| Fake Redis (`mock-redis/`) and scenes | sdk-race#53 |
+| NPCs and expressions | virtual-pet#54 |
+| JWT signature checks, multi-app and ecosystem data objects, `latencyMs` | sdk-leaderboard#13 |
+| `set-custom-text` | sdk-tictactoe#41 |
+
 ## Known bugs
 
 Tests for bugs that still exist are marked `test.fail(...)`: they pass while the bug is there and
