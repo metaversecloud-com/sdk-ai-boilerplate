@@ -47,7 +47,7 @@ same change as the fix. An app that doesn't have the bug deletes the marker stra
 
 | Test | Bug | Fix |
 |---|---|---|
-| `platform/secrets.spec.ts` (both tests) | `server/index.ts` registers the `cleanReturnPayload` scrubber after the API routes, so it never runs. `/api/game-state` returns the raw `DroppedAsset`, including `topia.interactiveSecret` and signed `InteractiveJWT`s. | Register the scrubber before `app.use("/api", router)`, or return plain objects from routes. Verified: moving it makes both tests pass. |
+| `platform/secrets.spec.ts` (both tests) | `server/index.ts` registers the `cleanReturnPayload` scrubber after the API routes, so it never runs. `/api/game-state` returns the raw `DroppedAsset`, including `topia.interactiveSecret` and signed `InteractiveJWT`s. | Register the scrubber before `app.use("/api", router)`, or return plain objects from routes. Verified: moving it makes both tests pass. Tracked in EXP-429. |
 | `platform/credentials.spec.ts` "names the credential problem" | `getCredentials` returns `{ error }` instead of throwing, so requests with bad credentials carry on and fail later on a Topia call. | Throw from `getCredentials` (protected file: needs explicit approval). Tracked in EXP-428. |
 
 ## Conventions

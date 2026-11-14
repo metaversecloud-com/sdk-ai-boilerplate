@@ -7,11 +7,11 @@ import { expect, test } from "../../fixtures";
 // Returning one from a route without stripping those fields hands them to every player.
 const LEAK_MARKERS = [INTERACTIVE_SECRET, "interactiveSecret", "InteractiveJWT"];
 
-// Known bug in the boilerplate (see e2e/README.md, "Known bugs"): server/index.ts registers the
+// Known bug, tracked in EXP-429 (see e2e/README.md, "Known bugs"): server/index.ts registers the
 // cleanReturnPayload scrubber after the API routes, so it never runs and /api/game-state returns the
 // raw DroppedAsset, secret included. Apps that don't leak must delete this line (the test then
 // fails with "expected to fail but passed" until they do).
-const KNOWN_LEAK = "cleanReturnPayload is registered after the routes (server/index.ts)";
+const KNOWN_LEAK = "EXP-429: cleanReturnPayload is registered after the routes (server/index.ts)";
 
 for (const route of CREDENTIALED_ROUTES) {
   test(`${route.method.toUpperCase()} ${route.path} never returns the interactive secret or a signed JWT`, async ({
