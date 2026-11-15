@@ -1,9 +1,16 @@
 // Shared by every SDK app: keep this file identical across repos. App-specific tests go in tests/app.
-import { APP_SHELL_MARKER, ENTRY_PAGE } from "../../app.config";
+import * as config from "../../app.config";
 import { INTERACTIVE_SECRET } from "../../constants";
 import { expect, test } from "../../fixtures";
+import { withPrivateServer } from "../../helpers/privateServer";
+
+const { APP_SHELL_MARKER, ENTRY_PAGE } = config;
+// Read through the namespace so an app.config.ts from before these settings existed still works.
+const HEALTH_KNOWN_BUGS = config.HEALTH_KNOWN_BUGS ?? {};
+const PROCESS_KNOWN_BUGS = config.PROCESS_KNOWN_BUGS ?? {};
 
 test("health endpoint keeps the contract monitoring relies on", async ({ request }) => {
+  test.fail(!!HEALTH_KNOWN_BUGS.incompleteContract, HEALTH_KNOWN_BUGS.incompleteContract);
   const response = await request.get("/api/system/health");
 
   expect(response.ok()).toBe(true);
@@ -18,7 +25,21 @@ test("health endpoint keeps the contract monitoring relies on", async ({ request
       NODE_ENV: "test",
     }),
   });
-  expect(JSON.stringify(body)).not.toContain(INTERACTIVE_SECRET);
+});
+
+test("health endpoint never returns the interactive secret", async ({ request }) => {
+  const response = await request.get("/api/system/health");
+
+  expect(await response.text()).not.toContain(INTERACTIVE_SECRET);
+});
+
+test("a promise rejection nobody handles doesn't take the server down", async () => {
+  test.fail(!!PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection, PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection);
+  test.slow();
+
+  const { alive } = await withPrivateServer(async () => {}, { unhandledRejection: true });
+
+  expect(alive, "the app process exited").toBe(true);
 });
 
 test("unknown pages fall back to the app shell", async ({ request }) => {

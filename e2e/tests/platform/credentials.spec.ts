@@ -2,6 +2,7 @@
 // app.config.ts.
 import { CREDENTIALED_ROUTES } from "../../app.config";
 import { expect, test } from "../../fixtures";
+import { withPrivateServer } from "../../helpers/privateServer";
 import { callRoute } from "./callRoute";
 
 for (const route of CREDENTIALED_ROUTES) {
@@ -9,8 +10,22 @@ for (const route of CREDENTIALED_ROUTES) {
 
   test.describe(`${route.method.toUpperCase()} ${route.basePath ?? "/api"}${route.path}`, () => {
     test("rejects a request without session credentials", async ({ request, world }) => {
-      test.fail(!!bugs.acceptsMissingCredentials, bugs.acceptsMissingCredentials);
+      const bug = bugs.crashesServer ?? bugs.acceptsMissingCredentials;
+      test.fail(!!bug, bug);
       await world.seed();
+
+      if (bugs.crashesServer) {
+        // Against a private instance, so the crash can't take the shared server down.
+        test.slow();
+        const { result, error, alive } = await withPrivateServer((origin) =>
+          callRoute(request, route, undefined, origin),
+        );
+        expect(alive, "the app process exited").toBe(true);
+        expect(error).toBeUndefined();
+        expect(result!.ok()).toBe(false);
+        expect((await result!.json()).success).toBe(false);
+        return;
+      }
 
       const response = await callRoute(request, route);
 

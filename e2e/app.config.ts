@@ -15,6 +15,15 @@ export type KnownBugs = {
   acceptsForeignCredentials?: string;
   /** Bad credentials fail later on a Topia call instead of with a credential error. */
   unnamedCredentialError?: string;
+  /**
+   * A request without session credentials takes the app process down (e.g. getCredentials throws
+   * outside any try/catch, and @rtsdk/topia's unhandledRejection hook calls process.exit(1)). The
+   * missing-credentials test then runs against a private app instance (helpers/privateServer.ts)
+   * instead of the shared one, so it can't kill the server mid-suite, and fails while the bug exists.
+   * If the suite collapses with ECONNREFUSED right after a "rejects a request without session
+   * credentials" test, that route needs this.
+   */
+  crashesServer?: string;
 };
 
 export type RouteSpec = {
@@ -60,3 +69,38 @@ export const ENTRY_PAGE_KNOWN_BUGS: Pick<KnownBugs, "leaksSecret"> = {};
 
 /** Text the app shell's HTML must contain. Change it if the app isn't a React root (e.g. Unity). */
 export const APP_SHELL_MARKER = 'id="root"';
+
+/**
+ * Bugs of the health endpoint (GET /api/system/health), e.g. { incompleteContract: "EXP-123: no
+ * COMMIT_HASH/BUILD_TIME in envs" } for apps forked before the contract had them. Marks the contract
+ * test test.fail instead of changing app code in the e2e PR.
+ */
+export const HEALTH_KNOWN_BUGS: { incompleteContract?: string } = {};
+
+/**
+ * Bugs of the app process as a whole.
+ * exitsOnUnhandledRejection: a promise rejection nobody handles exits the process, so any route that
+ * forgets a try/catch lets one request restart the server for every player. @rtsdk/topia registers an
+ * unhandledRejection hook that calls process.exit(1) when it's imported, which runs even when the app
+ * registers its own logging handler. Fix: process.removeAllListeners("unhandledRejection") before
+ * registering the app's handler.
+ */
+export const PROCESS_KNOWN_BUGS: { exitsOnUnhandledRejection?: string } = {
+  exitsOnUnhandledRejection:
+    "@rtsdk/topia's unhandledRejection hook calls process.exit(1); server/index.ts's handler doesn't stop it",
+};
+
+/**
+ * Extra environment for the app under test (merged over the defaults in appEnv.ts; also passed to
+ * private instances and the Docker image). A function gets the mock's address as the app reaches it
+ * ({ host: "localhost:3101" or "host.docker.internal:3101", url: "http://<host>" }), for fakes of
+ * external APIs served by mock-topia. Fake S3 opt-in: { S3_BUCKET: FAKE_S3_BUCKET } (constants.ts).
+ * Blank every variable that would point the app at a real service.
+ */
+export const APP_ENV: Record<string, string> | ((mock: { host: string; url: string }) => Record<string, string>) = (
+  mock,
+) => ({
+  // The boilerplate's example posts player stats to the leaderboard app.
+  LEADERBOARD_BASE_URL: `${mock.url}/leaderboard`,
+  GOOGLESHEETS_SHEET_ID: "",
+});

@@ -1,6 +1,6 @@
 // Tests for the boilerplate's example page. Each app replaces this folder with tests for its own
 // pages and rules (see sdk-quiz/e2e/tests for a full example).
-import { KEY_ASSET_ID, expect, test } from "../../fixtures";
+import { expect, test } from "../../fixtures";
 
 test("shows the dropped asset the app was opened from", async ({ page, world }) => {
   await world.seed();
@@ -16,7 +16,7 @@ test("initializes the asset's data object and records the visit", async ({ page,
   await page.goto(world.url("/"));
   await expect(page.getByText(/successfully retrieved/)).toBeVisible();
 
-  expect(await world.assetData(KEY_ASSET_ID)).toEqual({ leaderboard: {} });
+  expect(await world.assetData()).toEqual({ leaderboard: {} });
   expect(Object.values(await world.visitorData())).toContainEqual({ dateStarted: expect.any(Number) });
   expect(await world.events("world-toast")).toContainEqual(expect.objectContaining({ title: "Nice Work!" }));
   expect(await world.events("leaderboard-stats")).toContainEqual(
@@ -46,4 +46,23 @@ test("shows an error when the asset can't be loaded", async ({ page, world }) =>
   await page.goto(world.url("/"));
 
   await expect(page.locator(".text-error")).toContainText("Error");
+});
+
+test("shows an error when Topia fails to load the asset", async ({ page, world }) => {
+  await world.seed({ failures: { [`GET /api/v1/world/${world.urlSlug}/assets/${world.assetId}`]: 500 } });
+  await page.goto(world.url("/"));
+
+  await expect(page.locator(".text-error")).toContainText("Error");
+  expect(await world.events("injected-failure")).toContainEqual(expect.objectContaining({ status: 500 }));
+});
+
+test("another player who is an admin sees the settings button", async ({ page, world }) => {
+  await world.seed({ otherVisitors: { 43: { isAdmin: true } } });
+
+  await page.goto(world.url("/", world.as(43)));
+
+  await expect(page.getByText(/successfully retrieved/)).toBeVisible();
+  await expect(page.locator("button.icon-with-rounded-border")).toBeVisible();
+  expect(Object.values(await world.visitorData(43))).toContainEqual({ dateStarted: expect.any(Number) });
+  expect(await world.visitorData()).toEqual({});
 });
