@@ -34,11 +34,12 @@ test("health endpoint never returns the interactive secret", async ({ request })
 });
 
 test("a promise rejection nobody handles doesn't take the server down", async () => {
-  test.fail(!!PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection, PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection);
   test.slow();
 
   const { alive } = await withPrivateServer(async () => {}, { unhandledRejection: true });
 
+  // Marked only now: an instance that didn't start must fail the test, not count as the known bug.
+  test.fail(!!PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection, PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection);
   expect(alive, "the app process exited").toBe(true);
 });
 

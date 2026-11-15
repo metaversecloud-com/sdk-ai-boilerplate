@@ -10,8 +10,6 @@ for (const route of CREDENTIALED_ROUTES) {
 
   test.describe(`${route.method.toUpperCase()} ${route.basePath ?? "/api"}${route.path}`, () => {
     test("rejects a request without session credentials", async ({ request, world }) => {
-      const bug = bugs.crashesServer ?? bugs.acceptsMissingCredentials;
-      test.fail(!!bug, bug);
       await world.seed();
 
       if (bugs.crashesServer) {
@@ -20,6 +18,8 @@ for (const route of CREDENTIALED_ROUTES) {
         const { result, error, alive } = await withPrivateServer((origin) =>
           callRoute(request, route, undefined, origin),
         );
+        // Marked only now: an instance that didn't start must fail the test, not count as the known bug.
+        test.fail(true, bugs.crashesServer);
         expect(alive, "the app process exited").toBe(true);
         expect(error).toBeUndefined();
         expect(result!.ok()).toBe(false);
@@ -27,6 +27,7 @@ for (const route of CREDENTIALED_ROUTES) {
         return;
       }
 
+      test.fail(!!bugs.acceptsMissingCredentials, bugs.acceptsMissingCredentials);
       const response = await callRoute(request, route);
 
       expect(response.ok()).toBe(false);
