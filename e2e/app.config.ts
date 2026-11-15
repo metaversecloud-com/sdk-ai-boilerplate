@@ -1,5 +1,7 @@
 // Per-app settings for the shared platform tests in tests/platform. Every app edits this file;
 // the platform specs themselves stay identical across SDK apps.
+import type { Page } from "@playwright/test";
+import type { TopiaWorld } from "./fixtures";
 
 /**
  * Bugs a route still has, each set to its tracking reason (e.g. "EXP-429: ..."). The matching
@@ -17,11 +19,13 @@ export type KnownBugs = {
   unnamedCredentialError?: string;
   /**
    * A request without session credentials takes the app process down (e.g. getCredentials throws
-   * outside any try/catch, and @rtsdk/topia's unhandledRejection hook calls process.exit(1)). The
-   * missing-credentials test then runs against a private app instance (helpers/privateServer.ts)
-   * instead of the shared one, so it can't kill the server mid-suite, and fails while the bug exists.
-   * If the suite collapses with ECONNREFUSED right after a "rejects a request without session
-   * credentials" test, that route needs this.
+   * outside any try/catch, and @rtsdk/topia's unhandledRejection hook calls process.exit(1)). All three
+   * credential tests then run against private app instances (helpers/privateServer.ts) instead of the
+   * shared one, so they can't kill the server mid-suite. The missing-credentials test fails while the bug
+   * exists; the foreign-credentials ones count an instance that went down as this bug and otherwise check
+   * as usual (so foreign credentials that crash the route, e.g. getCredentials' { error } thrown later,
+   * are covered too). If the suite collapses with ECONNREFUSED right after one of the credential tests,
+   * that route needs this.
    */
   crashesServer?: string;
 };
@@ -77,6 +81,20 @@ export const ENTRY_PAGE: string | null = "/";
 /** Bugs seen when loading ENTRY_PAGE (only leaksSecret applies). */
 export const ENTRY_PAGE_KNOWN_BUGS: Pick<KnownBugs, "leaksSecret"> = {};
 
+/**
+ * What the page-load secret scan reads. "api" (default): the page's /api responses, at least one required.
+ * "all": every response from the app (document, scripts, /api) plus WebSocket frames, none required, for
+ * pages that talk over a socket or call /api only after the player acts.
+ */
+export const ENTRY_PAGE_SCAN: "api" | "all" = "api";
+
+/**
+ * Runs after ENTRY_PAGE loads and before the scan (e.g. click "Join" so the page opens its socket or calls
+ * /api). Optional. Wait inside it for what it triggers (e.g. expect the game board to show): the scan only
+ * reads what arrived by the time it returns and the page went network-idle.
+ */
+export const ENTRY_PAGE_ACTION: ((page: Page, world: TopiaWorld) => Promise<void>) | undefined = undefined;
+
 /** Text the app shell's HTML must contain. Change it if the app isn't a React root (e.g. Unity). */
 export const APP_SHELL_MARKER = 'id="root"';
 
@@ -86,8 +104,11 @@ export const APP_SHELL_MARKER = 'id="root"';
  */
 export const APP_SHELL_FALLBACK: boolean = true;
 
+/** The app's health endpoint, for the shared server's readiness check, private instances and system.spec. */
+export const HEALTH_PATH: string = "/api/system/health";
+
 /**
- * Bugs of the health endpoint (GET /api/system/health), e.g. { incompleteContract: "EXP-123: no
+ * Bugs of the health endpoint (HEALTH_PATH), e.g. { incompleteContract: "EXP-123: no
  * COMMIT_HASH/BUILD_TIME in envs" } for apps forked before the contract had them. Marks the contract
  * test test.fail instead of changing app code in the e2e PR.
  */

@@ -1,16 +1,18 @@
 // Shared by every SDK app: keep this file identical across repos.
 import { ChildProcess, execFileSync, spawn } from "node:child_process";
+import { mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { APP_IMAGE, appEnv } from "../appEnv";
+import { APP_IMAGE, appEnv, HEALTH_PATH } from "../appEnv";
 
 const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PRELOAD_DIR = path.join(E2E_DIR, "helpers/preload");
 const FIRED = "[e2e] rejecting a promise nobody handles";
 const SURVIVED = "[e2e] still running after the unhandled rejection";
 
-const freePort = () =>
+const unusedPort = () =>
   new Promise<number>((resolve) => {
     const server = net.createServer();
     server.listen(0, () => {
@@ -18,6 +20,33 @@ const freePort = () =>
       server.close(() => resolve(port));
     });
   });
+
+// The port is free when unusedPort() closes its probe, but the app only binds it a second or more later.
+// Meanwhile another worker (or another app's suite) can get the same port back from the OS and start its own
+// private instance there: one of the two then fails to start, or worse, its health check reaches the other
+// instance. A reservation file per port, shared by every process on the machine, rules that out.
+const RESERVATIONS = path.join(os.tmpdir(), "sdk-app-e2e-ports");
+// Older than any private instance lives (60s start + the test): left behind by a killed run.
+const STALE_MS = 10 * 60_000;
+
+const reservePort = async () => {
+  mkdirSync(RESERVATIONS, { recursive: true });
+  for (;;) {
+    const port = await unusedPort();
+    const file = path.join(RESERVATIONS, String(port));
+    try {
+      if (Date.now() - statSync(file).mtimeMs > STALE_MS) rmSync(file, { force: true });
+    } catch {
+      // No reservation.
+    }
+    try {
+      writeFileSync(file, String(process.pid), { flag: "wx" });
+      return { port, release: () => rmSync(file, { force: true }) };
+    } catch {
+      // Reserved by another private instance: try another port.
+    }
+  }
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -43,7 +72,7 @@ export const withPrivateServer = async <T>(
   use: (baseURL: string) => Promise<T>,
   { unhandledRejection = false, env = {} }: { unhandledRejection?: boolean; env?: Record<string, string> } = {},
 ): Promise<PrivateServerResult<T>> => {
-  const port = await freePort();
+  const { port, release } = await reservePort();
   const baseURL = `http://localhost:${port}`;
   const container = `sdk-app-e2e-private-${port}`;
   let child: ChildProcess;
@@ -84,13 +113,14 @@ export const withPrivateServer = async <T>(
   let exited = false;
   const exit = new Promise<void>((resolve) => child.once("exit", () => ((exited = true), resolve())));
   const health = () =>
-    fetch(`${baseURL}/api/system/health`)
+    fetch(`${baseURL}${HEALTH_PATH}`)
       .then((r) => r.ok)
       .catch(() => false);
   const alive = async () => !exited && (await health());
 
   try {
-    for (let started = Date.now(); !(await health()); await sleep(100)) {
+    // A health answer only counts while our own process runs.
+    for (let started = Date.now(); !(await alive()); await sleep(100)) {
       // Exiting on the deliberate rejection before the first health check is a result, not a failed start.
       if (exited && unhandledRejection && output.includes(FIRED)) return { alive: false, output };
       if (exited || Date.now() - started > 60_000)
@@ -125,5 +155,6 @@ export const withPrivateServer = async <T>(
       process.kill(-child.pid, "SIGKILL");
     }
     await Promise.race([exit, sleep(5_000)]);
+    release();
   }
 };

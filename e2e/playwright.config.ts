@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
-import { APP_IMAGE, appEnv } from "./appEnv";
-import { APP_PORT, INTERACTIVE_KEY, MOCK_TOPIA_PORT } from "./constants";
+import { APP_IMAGE, appEnv, HEALTH_PATH } from "./appEnv";
+import { APP_PORT, E2E_API_KEY, INTERACTIVE_KEY, MOCK_TOPIA_PORT } from "./constants";
 
 // E2E_APP_IMAGE=<image> runs the app from a Docker image (what ships, e.g. to test a Node upgrade)
 // instead of local Node. The real app (production build) talks to an in-memory fake of the Topia public
@@ -44,12 +44,12 @@ export default defineConfig({
     {
       command: "node mock-topia/server.mjs",
       url: `http://localhost:${MOCK_TOPIA_PORT}/__mock/health`,
-      env: { MOCK_TOPIA_PORT: String(MOCK_TOPIA_PORT), INTERACTIVE_KEY },
+      env: { MOCK_TOPIA_PORT: String(MOCK_TOPIA_PORT), INTERACTIVE_KEY, E2E_API_KEY },
       reuseExistingServer: !process.env.CI,
     },
     {
       ...appServer,
-      url: `http://localhost:${APP_PORT}/api/system/health`,
+      url: `http://localhost:${APP_PORT}${HEALTH_PATH}`,
       timeout: 180_000,
     },
   ],

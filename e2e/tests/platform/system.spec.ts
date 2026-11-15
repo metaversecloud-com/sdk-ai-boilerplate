@@ -1,5 +1,6 @@
 // Shared by every SDK app: keep this file identical across repos. App-specific tests go in tests/app.
 import * as config from "../../app.config";
+import { HEALTH_PATH } from "../../appEnv";
 import { INTERACTIVE_SECRET } from "../../constants";
 import { expect, test } from "../../fixtures";
 import { withPrivateServer } from "../../helpers/privateServer";
@@ -12,7 +13,7 @@ const APP_SHELL_FALLBACK = config.APP_SHELL_FALLBACK ?? true;
 
 test("health endpoint keeps the contract monitoring relies on", async ({ request }) => {
   test.fail(!!HEALTH_KNOWN_BUGS.incompleteContract, HEALTH_KNOWN_BUGS.incompleteContract);
-  const response = await request.get("/api/system/health");
+  const response = await request.get(HEALTH_PATH);
 
   expect(response.ok()).toBe(true);
   const body = await response.json();
@@ -29,7 +30,7 @@ test("health endpoint keeps the contract monitoring relies on", async ({ request
 });
 
 test("health endpoint never returns the interactive secret", async ({ request }) => {
-  const response = await request.get("/api/system/health");
+  const response = await request.get(HEALTH_PATH);
 
   expect(await response.text()).not.toContain(INTERACTIVE_SECRET);
 });

@@ -7,14 +7,27 @@ import { INTERACTIVE_KEY, INTERACTIVE_SECRET, MOCK_TOPIA_PORT } from "./constant
 export const APP_IMAGE = process.env.E2E_APP_IMAGE;
 
 /**
+ * mock-topia's address as the app reaches it: localhost, or host.docker.internal from the Docker image. Use
+ * it for URLs the app itself calls (seeded webhook URLs, fakes of external APIs), never for the test's own
+ * calls (MOCK_TOPIA_URL).
+ */
+export const mockForApp = () => {
+  const host = `${APP_IMAGE ? "host.docker.internal" : "localhost"}:${MOCK_TOPIA_PORT}`;
+  return { host, url: `http://${host}` };
+};
+
+/** Path of the app's health endpoint: HEALTH_PATH in app.config.ts, default /api/system/health. */
+export const HEALTH_PATH: string = config.HEALTH_PATH ?? "/api/system/health";
+
+/**
  * Environment of the app under test, for the shared server, private instances (helpers/privateServer.ts)
  * and the Docker image alike. Explicit env wins over any developer ../.env because dotenv never
  * overrides existing variables.
  */
 export const appEnv = (port: number): Record<string, string> => {
   // The container reaches the mock on the host through host.docker.internal.
-  const host = `${APP_IMAGE ? "host.docker.internal" : "localhost"}:${MOCK_TOPIA_PORT}`;
-  const mock = { host, url: `http://${host}` };
+  const mock = mockForApp();
+  const { host } = mock;
   const extra = typeof config.APP_ENV === "function" ? config.APP_ENV(mock) : config.APP_ENV ?? {};
   return {
     PORT: String(port),
