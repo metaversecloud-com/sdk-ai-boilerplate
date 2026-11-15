@@ -312,16 +312,15 @@ fail with "Expected to fail, but passed" once it's fixed, so the marker is remov
 as the fix. In `tests/platform/` the markers come from `knownBugs` on each route in `app.config.ts`
 (and `ENTRY_PAGE_KNOWN_BUGS` for the page load), so the specs stay identical across apps.
 
-| Test | Bug | Fix |
-|---|---|---|
-| `platform/credentials.spec.ts` "names the credential problem" (`unnamedCredentialError`) | `getCredentials` returns `{ error }` instead of throwing, so requests with bad credentials carry on and fail later on a Topia call. | Throw from `getCredentials` (protected file: needs explicit approval). Tracked in EXP-428. |
-| `platform/system.spec.ts` "a promise rejection nobody handles doesn't take the server down" (`exitsOnUnhandledRejection`) | `@rtsdk/topia`'s `unhandledRejection` hook calls `process.exit(1)`; the handler in `server/index.ts` meant to prevent crashes runs too late to matter. | `process.removeAllListeners("unhandledRejection")` before `server/index.ts` registers its handler (or drop the exit from the SDK). |
-| `platform/system.spec.ts` "a malformed JSON body gets a 400 without a stack trace or server paths" (`ERROR_KNOWN_BUGS.malformedJson`) | No error-handling middleware: `express.json()`'s parse error reaches Express' default handler, whose HTML page shows the stack trace and file paths (`NODE_ENV` isn't `production` under test, nor set by the Dockerfile). | An error middleware in `server/index.ts` answering `entity.parse.failed` with a JSON 400. |
+The boilerplate itself has none. It fixes four bugs that apps forked earlier still carry; mark them
+in the app's `app.config.ts` until the app takes the same fix:
 
-The interactive secret leak (EXP-429) is fixed here: `server/index.ts` registers the
-`cleanReturnPayload` scrubber on `/api` before the routes, and the scrubber also strips
-`interactiveSecret` from SDK errors. Apps forked earlier register it after the routes, where it
-never runs; set `leaksSecret` on the routes that leak until they take the same fix.
+| Marker | Bug in older forks | Fix (as in this boilerplate) |
+|---|---|---|
+| `knownBugs.leaksSecret` | The `cleanReturnPayload` scrubber is registered after the routes, where it never runs, so responses carry the interactive secret (EXP-429). | Register the scrubber on `/api` before the routes; strip `interactiveSecret` too. |
+| `knownBugs.unnamedCredentialError` | `getCredentials` returns `{ error }` instead of throwing, so requests with bad credentials carry on and fail later on a Topia call (EXP-428 #6). | `server/utils/getCredentials.ts` throws; the route's catch answers the request. |
+| `PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection` | `@rtsdk/topia`'s `unhandledRejection` hook calls `process.exit(1)`; the handler in `server/index.ts` runs too late to matter (EXP-472). | `process.removeAllListeners("unhandledRejection")` before `server/index.ts` registers its handler. |
+| `ERROR_KNOWN_BUGS.malformedJson` | `express.json()`'s parse error reaches Express' default handler, whose HTML page shows the stack trace and file paths (EXP-473). | An error middleware after `express.json()` answering `entity.parse.failed` with a JSON 400. |
 
 ## Conventions
 
