@@ -26,6 +26,9 @@ e2e/scripts/test-image.sh 24     # --build-arg NODE_VERSION=24, fails unless the
 Ports: app `3100`, mock `3101`, mock-redis `3102` when enabled (override with `APP_PORT` / `MOCK_TOPIA_PORT` /
 `MOCK_REDIS_PORT`; the Redis port defaults to `MOCK_TOPIA_PORT + 1`).
 
+Local runs need Node 22 or later: the client build's Vite fails on older versions (e.g. 20.10)
+before any test runs. `nvm use 22` or similar first.
+
 If `npx playwright ...` prints an npm banner or dies with `EPIPE` when its output is piped, call the
 binary directly: `./node_modules/.bin/playwright test`.
 
@@ -65,7 +68,7 @@ First run in a repo forked from an older boilerplate:
 | `app.config.ts` | The app's credentialed routes, their known bugs, the entry page, the app shell marker, health/process known bugs and test-only app env | See below |
 | `appEnv.ts` | The app's environment under test (mock Topia, fake S3, dummy AWS credentials, `COMMIT_HASH`/`TZ` locally, `REDIS_URL` with `MOCK_REDIS`) plus `APP_ENV`; used by the shared server, private instances and the Docker image. `mockForApp()` is `{ host, url, redisUrl }` as the app reaches mock-topia and mock-redis (`host.docker.internal` in image mode), for URLs the app itself calls; `HEALTH_PATH`, `MOCK_REDIS` | Keep identical; app variables go in `APP_ENV` |
 | `playwright.config.ts` | Starts mock-topia, mock-redis (`MOCK_REDIS`), any `EXTRA_WEB_SERVERS`, then the app (local build or `E2E_APP_IMAGE`); drawer-width viewport, UTC | Keep identical; per-app settings are in `app.config.ts` |
-| `mock-redis/server.mjs` | In-memory Redis (RESP2) for apps that keep state or fan SSE updates out through Redis; started only with `MOCK_REDIS = true` (see "Fake Redis") | Keep identical; add commands here (in the boilerplate) if an app needs more |
+| `mock-redis/server.mjs` | In-memory Redis (RESP2) for apps that keep state or fan SSE updates out through Redis; the suite starts it for the app only with `MOCK_REDIS = true` (see "Fake Redis"), but every repo needs it: `tests/platform/mock.spec.ts` always starts its own instance | Keep identical; add commands here (in the boilerplate) if an app needs more |
 | `tests/app/` | Tests for the boilerplate's example page | Replace with tests for the app's own pages and rules |
 | `fixtures.ts` | `world.seed({...})` builds one isolated Topia world per test; `world.url()` / `world.api()` / `world.credentials()` add the session credentials Topia appends (the nonce is unique per world) | Extend `seed` for the app's data objects |
 | `helpers/` | Shared test helpers apps import as needed. `leaderboardForgery.ts`: `forgeDisplayName(world, [999999])` for the `name\|score` leaderboard forgery. `sse.ts`: `openStream(world.api("/sse"))` reads an SSE stream from Node (`status`, `messages`, `close()`). `privateServer.ts`: `withPrivateServer(async (origin) => ..., { unhandledRejection?, env?, settleMs? })` runs a throwaway app instance for tests that may crash it, resolving `{ result, error, alive, output }`; `settleMs` (default 500) keeps watching for an exit after `use` returns. `press.ts`: `press(locator)` clicks by dispatching the event, for 0x0 icon-only buttons (see `stubSdkIcons`). `hooks.ts`: `hookUrl(world, name)` a per-world fake webhook URL as the app reaches it, `hookCalls(request, world, name?)` / `allHookCalls(request)` / `channelCalls(request, channel, text)` what the app sent there (see "Outgoing webhooks") | Keep; import from `tests/app` |
@@ -145,10 +148,12 @@ check run the request through `withPrivateServer` and scan its `output`.
 | `scenes: { [sceneId]: { name, description, previewImgUrl, width, height, ... } }` | What `GET /scenes/:sceneId` (`Scene.get` / `fetchSceneById`) returns, with `id` set to the key; read from the caller's world (JWT `urlSlug`). An unknown id answers 200 with a `null` body, like the real `getSceneById` (not a 404). |
 | `extraAssets: { [id]: {...} }` | Further dropped assets; `id` defaults to the key (an explicit `id` wins). |
 
-Profiles are global in the mock (one user data object per `profileId`, across worlds). An explicit
-`profileId` in `otherVisitors` or a `users` key like `"alice"` is shared by every test that uses it and
-collides when they run in parallel: derive it from the world with `world.scopedId("alice")`
-(`<world.profileId>-alice`).
+User data objects are kept per world in the mock (one record per `profileId` in each world), so a fixed
+`profileId` in `otherVisitors` or a `users` key like `"profile-alice"` is safe in tests running in parallel:
+each test's world has its own copy, and the app and the assertions see the id exactly as written. The flip
+side: one profile in two worlds of the same test doesn't share its user data object (the platform would).
+`world.scopedId("alice")` (`<world.profileId>-alice`) is still the way to keep anything else the mock or the
+app shares across worlds apart (S3 keys, webhook names, an app's process-wide cache keyed by profile).
 
 Acting as another player: `world.url("/", world.as(43))`, `request.post(world.apiAs(43, "/join"))`,
 `world.player(43)` (`{ visitorId, profileId, displayName }`). Seeded visitors have a `username` like real ones
@@ -175,8 +180,8 @@ new endpoints can't pass silently. A full app example lives in sdk-quiz (`e2e/te
 ## What the mock mirrors
 
 - Calls outside `/world/` (inventory, user data objects and inventory, expressions, ...) belong to the world named in the caller's `InteractiveJWT` (`urlSlug`), so seeded `delays`, `failures`, catalogs and analytics apply to them too.
-- A visitor's data object is its user's data object (one record per profile, like the real API): `Visitor` and `User` reads and writes for the same `profileId` see the same data.
-- `GET /world/:slug/visitors` (`?droppedAssetId=` keeps only visitors in that landmark zone, like `handleGetVisitors` for `WorldActivity.fetchVisitorsInZone`; NPCs created with the app's key are listed too, like `getVisitors`), `GET /world/:slug/assets-with-unique-name/:name` (`partial` is a prefix match like the real `startAt`/`endAt` query, and any `partial` value counts, even `false`), `PUT /user/inventory/:profileId/grant-user-inventory-item` (every visitor with that profile in the caller's world gets it), `GET /expressions` + `PUT .../visitors/:id/grant-expression/:id` (409 when already owned), `change-click-type`, `change-media-type` (sets `mediaPlayTime`, like a restart).
+- A visitor's data object is its user's data object (one record per profile, like the real API): `Visitor` and `User` reads and writes for the same `profileId` see the same data. Unlike the real API, that record is per world (the call's world: path, else JWT), so parallel tests can share a fixed `profileId`.
+- `GET /world/:slug/visitors` (`?droppedAssetId=` keeps only visitors in that landmark zone, like `handleGetVisitors` for `WorldActivity.fetchVisitorsInZone`; NPCs created with the app's key are listed too, like `getVisitors`), `GET /world/:slug/assets-with-unique-name/:name` (`partial` is a prefix match like the real `startAt`/`endAt` query, and any `partial` value counts, even `false`), `PUT /user/inventory/:profileId/grant-user-inventory-item` (every visitor with that profile in the caller's world gets it), `GET /expressions` + `PUT .../visitors/:id/grant-expression/:id` (an expression already owned answers 200 `{ statusCode: 409 }`, an unknown one 200 `{ statusCode: 404 }`: `grantUserExpression` returns its `ApiError` instead of throwing and `handleGrantUserExpression` sends it with a 200, so `Visitor.grantExpression` resolves), `change-click-type`, `change-media-type` (sets `mediaPlayTime`, like a restart).
 - Fake S3 under `/s3/<bucket>/<key>` (PUT incl. aws-chunked uploads, GET, HEAD, DELETE; `world.s3Objects()`). `appEnv.ts` always points `AWS_ENDPOINT_URL_S3` there with dummy credentials real AWS rejects and disables EC2 metadata, so a local run can't write to a real bucket even through an app's hardcoded fallback bucket name. `S3_BUCKET` stays empty; opt in with `APP_ENV = { S3_BUCKET: FAKE_S3_BUCKET }` (the underscore forces path-style URLs; a DNS-valid bucket name needs `forcePathStyle` in the app's client). Apps that read AWS credentials under other variable names (e.g. from `../.env`) must blank those in `APP_ENV`.
 - `GET /images/<anything>` answers a 1x1 PNG, for seeded image URLs the server downloads (`${MOCK_TOPIA_URL}/images/x.png`).
 - `GET /world/:slug/assets/:id` returns the asset with its `dataObject`, like the real API (`DroppedAsset.get` fills `droppedAsset.dataObject` from it).
@@ -193,8 +198,9 @@ new endpoints can't pass silently. A full app example lives in sdk-quiz (`e2e/te
 - `GET /auth/interactive-credentials` (`User.checkInteractiveCredentials`): 200 `{ success: true }` for a JWT with nonce, assetId, visitorId and urlSlug, else 401.
 - `POST /world/:slug/drop-scene` (`World.dropScene`): needs an admin visitor unless `allowNonAdmins` (API-key calls don't), answers `{ sceneDropId, success: true }` (`sceneDropId` defaults to `<sceneId>-<n>`). Scenes aren't modelled: one placeholder asset tagged with the `sceneDropId` stands in for the scene's assets. Logged as `drop-scene`.
 - `PUT .../assets/:id/set-private-zone` stores `assetPrivateConversation` / `assetPrivateZoneChannelDisabled` / `assetPrivateConversationCap` from `isPrivateZone` / `isPrivateZoneChatDisabled` / `privateZoneUserCap` (omitted ones keep their value); `set-asset-interactive-settings` sets `isInteractive` (default `false`) and `interactivePublicKey` (default `""`), so an omitted field resets. Both logged with the request body.
+- `PUT .../assets/:id/set-custom-text` (`DroppedAsset.updateCustomTextAsset(style, text)`, `setCustomTextAssetCaption`): `text` replaces the caption (omitted keeps it), each `style` attribute sent (`textColor`, `textSize`, ...; null or omitted keeps the asset's value) lands on the asset's own flat field, `textFontFamily` also sets the legacy `textFont`; answers the asset with those fields under `textStyle`. 400 for an asset whose `specialType` is set to something other than `"text"` (the real route also refuses one without `specialType`; the mock lets seeds omit it). Logged as `set-custom-text` with the request body.
 - `GET /world/:slug/visitors/:id/user-group-data-object` answers `{ success: true, userGroupDataObjects }` (seeded; the visitorId isn't used, like the real route).
-- NPCs and AI voice sessions, with `handleCreateNpc` / `handleGetNpc` / `handleDeleteNpc` / `handleStart|StopNpcVoiceSession`'s rules: `create-npc` needs an owned inventory item of type `NPC` whose catalog metadata has a `spriteUrl` (403 for another player's item), validates `spawnEffect` the same way, 409 for a second NPC unless `replace`; `get-npc` answers `null` without one; `start-npc-voice-session` needs the NPC and an `ek_` key, lets the same app restart, 409 when another app holds the session; `stop-npc-voice-session` is idempotent, 403 for another app's session; deleting or replacing the NPC ends the session (a `stopAiNpcVoice` event, the socket event the browser gets). Events: `create-npc`, `delete-npc`, `start-npc-voice-session` (with the voice config), `stop-npc-voice-session`.
+- NPCs and AI voice sessions, with `handleCreateNpc` / `handleGetNpc` / `handleDeleteNpc` / `handleStart|StopNpcVoiceSession`'s rules: `create-npc` needs an owned inventory item of type `NPC` whose catalog metadata has a `spriteUrl` (403 for another player's item), validates `spawnEffect` the same way, 409 for a second NPC unless `replace`; the NPC player has `isNPCFromKey` = `<publicKey>|<inventoryItemId>|<userInventoryItemId>` like `handleCreateNpc` / `mapRedisPlayer` (also in the visitors list); `get-npc` answers `null` without one; `start-npc-voice-session` needs the NPC and an `ek_` key, lets the same app restart, 409 when another app holds the session; `stop-npc-voice-session` is idempotent, 403 for another app's session; deleting or replacing the NPC ends the session (a `stopAiNpcVoice` event, the socket event the browser gets). Events: `create-npc`, `delete-npc`, `start-npc-voice-session` (with the voice config), `stop-npc-voice-session`.
 - API-key calls (an `Authorization` header and no interactive credentials) skip the public key check like `interactiveKeyValidator`; the only key accepted is `E2E_API_KEY` (`constants.ts`; `APP_ENV = { API_KEY: E2E_API_KEY }`), an unknown key is a 404 and an unseeded world a 401, like `apiKeyValidator`. The world routes also answer under `/api/world/...` (no `/v1`), like the real API.
 - Routes added since the error format was checked (`apiError` in `server.mjs`) answer errors like the real API, `{ errors: [{ message }] }`, which `@rtsdk/topia` reports as the error's message. Older routes still answer `{ message }` (see Known gaps).
 - `GET /scenes/:sceneId` (`Scene.get`): seeded `scenes`, else 200 `null` like `getSceneById` (`handleGetSceneById` answers `res.json(null)` when the `kits` doc doesn't exist). Needs a session or API key like the other world routes (the real `globalApiValidator` answers 400 without one, the mock 401).
@@ -255,7 +261,6 @@ Not in the boilerplate because they're app-specific. Copy from the PR when an ap
 | Fake Redis (`mock-redis/`, origin; now `MOCK_REDIS`) and scenes | sdk-race#53 |
 | NPCs and expressions | virtual-pet#54 |
 | JWT signature checks, multi-app and ecosystem data objects | sdk-leaderboard#13 |
-| `set-custom-text` | sdk-tictactoe#41 |
 | Extra players (`otherVisitors`, `world.as`), calendar-day tests in another timezone | sdk-grow#18 |
 | `update-visitor-inventory-item-quantity`, teams, SSE credential checks | sdk-escape-room#20 |
 | Stopped page clock for timer-driven gameplay, badge catalog incl. inactive and non-badge items | sdk-kitchen-rush#12 |
@@ -333,6 +338,29 @@ never runs; set `leaksSecret` on the routes that leak until they take the same f
     write lands. A delay on the read alone just runs the two requests one after another.
 - `page.clock.install()` doesn't pause time: the clock keeps running from the given time. Use
   `page.clock.pauseAt(...)` (or `install` + `pauseAt`) to stop it and `runFor` / `fastForward` to advance.
+- Interval-driven UIs (a power meter, a countdown, pattern playback): install the clock before `goto`, then
+  pause, wait until the interval has started, advance, resume. Pausing first stops a busy machine from moving
+  the UI past the point the test stops on; waiting for the interval matters because React sets it up in an
+  effect on a later task (its scheduler posts to a `MessageChannel`, which `page.clock` doesn't control), so
+  `runFor` straight after the click can advance time before the interval exists:
+
+  ```ts
+  await page.clock.install();
+  await page.goto(world.url());
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000); // runs on until it gets there
+  await page.getByRole("button", { name: "Throw" }).click();
+  await page.getByRole("button", { name: "Stop!" }).waitFor(); // the UI the interval drives is up...
+  await page.evaluate(() => new Promise<void>((resolve) => { // ...and React's effect has run
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(null);
+  }));
+  await page.clock.runFor(2 * 280); // exactly two ticks
+  await page.getByRole("button", { name: "Stop!" }).click();
+  await page.clock.resume(); // let the rest (animations, timeouts) run normally
+  ```
+
+  (sdk-ring-toss, sdk-color-echo.)
 - `withPrivateServer(use)`: return from `use` as soon as the requests are done; don't wait there for
   something to happen later (a poll, a timeout). `use` races the instance's exit, and after it returns the
   instance is watched for `settleMs` more (default 500ms) before it's killed, so a crash shows up as
@@ -378,7 +406,8 @@ Overwrite these with the boilerplate's copies; never edit them in an app (fix th
   `tests/platform/secrets.spec.ts`, `tests/platform/system.spec.ts`
 - `helpers/hooks.ts`, `helpers/leaderboardForgery.ts`, `helpers/press.ts`, `helpers/privateServer.ts`,
   `helpers/sse.ts`, `helpers/preload/unhandledRejection.cjs`
-- `mock-redis/server.mjs` (only needed with `MOCK_REDIS = true`; replace an app's own copy)
+- `mock-redis/server.mjs` (always, also without `MOCK_REDIS`: `tests/platform/mock.spec.ts` starts it; replaces
+  an app's own copy)
 - `scripts/test-image.sh`
 
 `.github/workflows/e2e.yml` is managed by Terraform (config_texts), not copied by hand.
@@ -403,7 +432,7 @@ the app's additions (diff the app's copy against the boilerplate commit it was c
 - `mock-topia/server.mjs`: keep the app's routes and fakes (external APIs, app-specific endpoints). Drop app
   copies of routes the boilerplate now has (visitors list/get, `assets-with-unique-name`, asset list and
   delete, `set-clickable-link-multi`, `change-click-type`/`change-media-type`, `set-private-zone`,
-  `set-asset-interactive-settings`, `drop-scene`, `scenes/:id`, `world-details`, expressions and
+  `set-asset-interactive-settings`, `set-custom-text`, `drop-scene`, `scenes/:id`, `world-details`, expressions and
   `grant-expression`, `grant-user-inventory-item`, `get-user-inventory-items`,
   `update-visitor-inventory-item-quantity`, `user-group-data-object`, NPC and voice-session routes,
   `auth/interactive-credentials`, `/hooks/*`, S3, `/images/*`): the boilerplate's follow the real API more
@@ -414,6 +443,9 @@ the app's additions (diff the app's copy against the boilerplate commit it was c
   `ERROR_KNOWN_BUGS`, `MALFORMED_JSON_REQUEST`, `ENTRY_PAGE_KNOWN_BUGS.callsOtherOrigin`, `knownBugs.answersNever`,
   `MOCK_REDIS`, `EXTRA_WEB_SERVERS`.
 - `tests/app/**` and `mock-topia/catalog.json`: the app's own; only adjust them for the behaviour changes below.
+- App-specific e2e notes (what the app's tests cover, its known bugs, seeding quirks) go in
+  `e2e/tests/app/README.md`, not in `e2e/README.md`, which is copied verbatim and would lose them on the next
+  sync. Move any such notes out of an app's old `e2e/README.md` before overwriting it.
 
 ### 3. Run and triage
 
@@ -488,3 +520,19 @@ mock-topia:
     `scenes` entry or `null`.
 25. mock-redis answers an error for commands it doesn't implement (app copies answered OK to anything): a
     Redis call that "worked" before may now reject; add the command to the boilerplate's mock-redis.
+26. `grant-expression` for an expression the visitor already owns answers 200 `{ statusCode: 409 }` (was HTTP
+    409), an unknown expression 200 `{ statusCode: 404 }` (was HTTP 404), like the real route: the SDK call now
+    resolves with that body instead of throwing. App code that relied on the throw has a real bug; an app mock
+    override that answered 409 can go.
+27. NPC players (`create-npc`, `get-npc`, NPCs in the visitors list) carry `isNPCFromKey`: exact `toEqual` on
+    them needs it (or `toMatchObject`); an app mock that added it can drop its override.
+28. `set-custom-text` is in the boilerplate (stores the flat style fields, answers `textStyle`, 400 for an asset
+    with another `specialType`): drop the app's copy. The event is unchanged (`{ ...body, type, assetId }`).
+29. User data objects are per world (they were global per `profileId`): fixed `profileId`s in `otherVisitors`
+    / `users` no longer collide across parallel tests, so hand-rolled per-test suffixes can go (keeping them
+    is harmless). A test that read one profile's user data from two worlds would now see two records.
+    `world.userData(profileId)` reads this world's copy (`/__mock/users/:id?world=<urlSlug>`). App mock routes
+    that use the user store take the world first: `getUser(slug, profileId)`, `visitorRecord(slug, visitor)`
+    (a one-argument `getUser` throws; user routes get the slug from `jwtPayload(req.headers.interactivejwt)`).
+30. `TopiaWorld.request` is `protected`: a subclass can use it for mock-topia control routes instead of keeping
+    its own copy of the request context.

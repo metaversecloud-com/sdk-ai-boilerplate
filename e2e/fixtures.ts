@@ -35,11 +35,11 @@ export type SeedOptions = {
   visitor?: Record<string, unknown>;
   /**
    * Other players in the world, keyed by visitorId. Act as one with world.as(id) / world.apiAs(id, path).
-   * Their default profileIds are unique per world; an explicit profileId is shared by every test that uses
-   * it (user data objects are global in the mock), so derive it from the world: world.scopedId("alice").
+   * Default profileId "<world.profileId>-v<id>". A fixed explicit one ("profile-alice") is fine: mock-topia
+   * keeps user data objects per world, so parallel tests using the same id don't share its data.
    */
   otherVisitors?: Record<number, OtherVisitor>;
-  /** Data objects of profiles that aren't in the world, keyed by profileId (use world.scopedId(...) keys). */
+  /** Data objects of profiles that aren't in the world, keyed by profileId (per world, like otherVisitors). */
   users?: Record<string, Record<string, unknown>>;
   /**
    * The ecosystem inventory catalog (GET /inventory, grants) for this world. Default: mock-topia/catalog.json
@@ -135,7 +135,8 @@ export class TopiaWorld {
   constructor(
     readonly urlSlug: string,
     readonly profileId: string,
-    private request: APIRequestContext,
+    /** Protected so app fixtures that subclass TopiaWorld can call mock-topia's control routes too. */
+    protected request: APIRequestContext,
     /** Id of the dropped asset the app is opened from (KEY_ASSET_ID unless the test uses uniqueAssetId). */
     readonly assetId = KEY_ASSET_ID,
   ) {}
@@ -254,8 +255,9 @@ export class TopiaWorld {
   }
 
   /**
-   * An id unique to this world, e.g. an explicit profileId for otherVisitors or a `users` key: profiles are
-   * global in the mock, so a fixed "alice" would be shared by every test running in parallel.
+   * An id unique to this world, for state the mock shares between worlds (S3 keys, webhook names, ...) or a
+   * profileId the app itself keeps in a global store. Not needed for otherVisitors / users profileIds:
+   * mock-topia keeps user data objects per world.
    */
   scopedId(name: string) {
     return `${this.profileId}-${name}`;
@@ -288,9 +290,9 @@ export class TopiaWorld {
     return (await this.state()).visitors[visitorId].dataObject;
   }
 
-  /** A profile's user data object (for a visitor, the same record as visitorData). */
+  /** A profile's user data object as this world sees it (for a visitor, the same record as visitorData). */
   async userData(profileId = this.profileId) {
-    const response = await this.request.get(`${MOCK_TOPIA_URL}/__mock/users/${profileId}`);
+    const response = await this.request.get(`${MOCK_TOPIA_URL}/__mock/users/${profileId}?world=${this.urlSlug}`);
     return (await response.json()).dataObject as Record<string, any>;
   }
 

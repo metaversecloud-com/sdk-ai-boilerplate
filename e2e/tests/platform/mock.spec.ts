@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext } from "@playwright/test";
 import { E2E_API_KEY, INTERACTIVE_KEY, INTERACTIVE_SECRET, MOCK_TOPIA_URL } from "../../constants";
-import { expect, test, VISITOR_ID, type TopiaWorld } from "../../fixtures";
+import { expect, test, TopiaWorld, VISITOR_ID } from "../../fixtures";
 import { allHookCalls, hookCalls } from "../../helpers/hooks";
 
 const API = `${MOCK_TOPIA_URL}/api/v1`;
@@ -190,6 +190,73 @@ test.describe("mock-topia", () => {
       expect.arrayContaining(["create-npc", "start-npc-voice-session", "delete-npc", "stopAiNpcVoice"]),
     );
     expect(await (await api.get(`${visitor}/get-npc`)).json()).toBeNull();
+  });
+
+  test("NPCs carry isNPCFromKey as <publicKey>|<inventoryItemId>|<userInventoryItemId>", async ({ request, world }) => {
+    await world.seed({ inventoryItems: [NPC_ITEM], inventory: [{ item: "npc-fox" }] });
+    const api = sdk(request, world);
+    const visitor = `/world/${world.urlSlug}/visitors/${VISITOR_ID}`;
+    const [owned] = await (await api.get(`${visitor}/get-visitor-inventory-items`)).json();
+    const key = `${INTERACTIVE_KEY}|${NPC_ITEM.id}|${owned.id}`;
+
+    const { player } = await (await api.post(`${visitor}/create-npc`, { userInventoryItemId: owned.id })).json();
+    expect(player.isNPCFromKey).toBe(key);
+    expect((await (await api.get(`${visitor}/get-npc`)).json()).isNPCFromKey).toBe(key);
+    const visitors = await (await api.get(`/world/${world.urlSlug}/visitors`)).json();
+    expect(visitors[player.playerId].isNPCFromKey).toBe(key);
+  });
+
+  test("grant-expression: an owned or unknown expression answers 200 with the ApiError's statusCode", async ({ request, world }) => {
+    await world.seed({ expressions: [{ id: "emote-wave", name: "Wave" }] });
+    const api = sdk(request, world);
+    const grant = (id: string) => api.put(`/world/${world.urlSlug}/visitors/${VISITOR_ID}/grant-expression/${id}`);
+
+    const first = await grant("emote-wave");
+    expect([first.status(), await first.json()]).toEqual([200, { success: true }]);
+    const again = await grant("emote-wave");
+    expect([again.status(), await again.json()]).toEqual([200, { statusCode: 409 }]);
+    const unknown = await grant("emote-nope");
+    expect([unknown.status(), await unknown.json()]).toEqual([200, { statusCode: 404 }]);
+    expect(await world.events("grant-expression")).toHaveLength(1);
+  });
+
+  test("set-custom-text: text and style land on the asset's own fields, answered under textStyle", async ({ request, world }) => {
+    await world.seed({
+      extraAssets: {
+        caption: { specialType: "text", text: "old", textColor: "#000000", textSize: 20 },
+        image: { specialType: "webImage" },
+      },
+    });
+    const api = sdk(request, world);
+    const setText = (id: string, data: object) => api.put(`/world/${world.urlSlug}/assets/${id}/set-custom-text`, data);
+
+    const response = await setText("caption", { text: "new", style: { textColor: "#ffffff", textFontFamily: "Arial", textSize: null } });
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: "caption",
+      text: "new",
+      textStyle: { textColor: "#ffffff", textSize: 20, textFontFamily: "Arial", textFont: "Arial" },
+    });
+    await setText("caption", { style: {} });
+    expect((await world.state()).assets.caption).toMatchObject({ text: "new", textColor: "#ffffff", textSize: 20 });
+    expect(await world.events("set-custom-text")).toEqual([
+      expect.objectContaining({ assetId: "caption", text: "new" }),
+      expect.objectContaining({ assetId: "caption", style: {} }),
+    ]);
+    expect((await setText("image", { text: "x" })).status()).toBe(400);
+    expect((await setText("missing", { text: "x" })).status()).toBe(404);
+  });
+
+  test("user data objects are per world, so a fixed profileId doesn't leak between tests", async ({ request, world }) => {
+    const elsewhere = new TopiaWorld(`${world.urlSlug}-b`, `${world.profileId}-b`, request);
+    await world.seed({ otherVisitors: { 43: { profileId: "profile-alice", visitorData: { score: 1 } } } });
+    await elsewhere.seed({ users: { "profile-alice": { score: 2 } } });
+
+    await sdk(request, world).put("/user/dataObjects/profile-alice/update-data-object", { dataObject: { level: 3 } });
+
+    expect(await world.userData("profile-alice")).toEqual({ score: 1, level: 3 });
+    expect(await world.visitorData(43)).toEqual({ score: 1, level: 3 });
+    expect(await (await sdk(request, elsewhere).get("/user/dataObjects/profile-alice/get-data-object")).json()).toEqual({ score: 2 });
   });
 
   test("an NPC item another player owns is refused", async ({ request, world }) => {

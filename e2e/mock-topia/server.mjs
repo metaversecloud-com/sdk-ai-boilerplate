@@ -13,7 +13,7 @@
 //   PATCH /__mock/worlds/:urlSlug  change failures / delays / latencyMs / holdLocksDuringDelay mid-test
 //   GET  /__mock/worlds/:urlSlug   read world state + event log (particles, toasts, grants, analytics, ...)
 //   PATCH /__mock/worlds/:urlSlug/visitors/:id   change visitor fields mid-test (position, isAdmin, ...)
-//   GET  /__mock/users/:profileId  read a user data object
+//   GET  /__mock/users/:profileId?world=:urlSlug   read a user data object as that world sees it
 //   GET  /__mock/unhandled         public-API calls the mock didn't recognize, outside any world
 //   GET  /__mock/s3                objects in the fake S3 [{ bucket, key, size, contentType }] (all tests)
 //   GET  /__mock/hooks             calls to the fake outgoing webhooks under /hooks (all tests), oldest first
@@ -126,20 +126,31 @@ const getWorld = (urlSlug) => {
   if (!worlds.has(urlSlug)) worlds.set(urlSlug, emptyWorld());
   return worlds.get(urlSlug);
 };
-const getUser = (profileId) => {
-  if (!users.has(profileId)) users.set(profileId, { dataObject: {} });
-  return users.get(profileId);
+// User data objects are global per profile on the platform, but here each world (one per test) has its own
+// copy of every profile's record: tests running in parallel may then seed the same fixed profileId
+// ("profile-alice") without sharing its data. The world is the call's (path, else InteractiveJWT; none for
+// API-key calls outside /world/). The flip side: one profile in two worlds of the same test doesn't share
+// its user data object either.
+const getUser = (urlSlug, profileId) => {
+  // App routes written against the old getUser(profileId) fail loudly instead of reading an empty record.
+  if (profileId === undefined) throw new Error("getUser(urlSlug, profileId): user data objects are per world");
+  const key = `${urlSlug ?? ""}\n${profileId}`;
+  if (!users.has(key)) users.set(key, { dataObject: {} });
+  return users.get(key);
 };
 // Like the public API, a visitor's data object IS its user's data object (both are stored per profile
 // and app), so Visitor and User reads/writes for the same profileId see the same record.
-const visitorRecord = (visitor) => getUser(visitor.profileId);
+const visitorRecord = (urlSlug, visitor) => getUser(urlSlug, visitor.profileId);
 // World state as the control plane returns it: each visitor's data object filled in from its profile.
-const worldWithVisitorData = (world) => ({
-  ...world,
-  visitors: Object.fromEntries(
-    Object.entries(world.visitors).map(([id, v]) => [id, { ...v, dataObject: clone(visitorRecord(v).dataObject) }]),
-  ),
-});
+const worldWithVisitorData = (urlSlug) => {
+  const world = getWorld(urlSlug);
+  return {
+    ...world,
+    visitors: Object.fromEntries(
+      Object.entries(world.visitors).map(([id, v]) => [id, { ...v, dataObject: clone(visitorRecord(urlSlug, v).dataObject) }]),
+    ),
+  };
+};
 const catalog = (world) => world?.inventoryItems ?? INVENTORY_ITEMS;
 const expressionsOf = (world) => world?.expressions ?? EXPRESSIONS;
 
@@ -196,6 +207,20 @@ const isPlayerIdSuffixedAnalyticName = (name) => {
 // The real API's error body (uncaughtErrorHandler / validationErrorHandler): the SDK reports errors[0].message
 // as the error's message. Routes added before this still answer { message }, see the README's known gaps.
 const apiError = (status, message) => [status, { errors: [{ message }] }];
+
+// A text asset's style attributes (textAssetStyleValidation / mapDroppedAssetProperties' textStyle).
+const TEXT_STYLE_KEYS = [
+  "textAlign",
+  "textBackgroundColor",
+  "textColor",
+  "textSize",
+  "textStrokeColor",
+  "textStrokeRatio",
+  "textWidth",
+  "textWeight",
+  "textFont",
+  "textFontFamily",
+];
 
 const send = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -271,7 +296,7 @@ const routes = [
       const { users: userData = {}, ...rest } = clone(body);
       const world = { ...emptyWorld(), ...rest };
       for (const visitor of Object.values(world.visitors)) {
-        visitorRecord(visitor).dataObject = visitor.dataObject || {};
+        visitorRecord(urlSlug, visitor).dataObject = visitor.dataObject || {};
         delete visitor.dataObject;
         // Owned catalog items { item: id or name, quantity?, metadata? }, resolved against the world's catalog.
         for (const { item: ref, quantity = 1, metadata = {} } of visitor.ownedItems || []) {
@@ -282,12 +307,12 @@ const routes = [
         delete visitor.ownedItems;
       }
       // Data objects of other profiles (players who aren't in the world right now).
-      for (const [profileId, dataObject] of Object.entries(userData)) getUser(profileId).dataObject = dataObject;
+      for (const [profileId, dataObject] of Object.entries(userData)) getUser(urlSlug, profileId).dataObject = dataObject;
       worlds.set(urlSlug, world);
       return [200, { ok: true }];
     },
   ],
-  ["GET", /^\/__mock\/worlds\/([^/]+)$/, ([urlSlug]) => [200, worldWithVisitorData(getWorld(urlSlug))]],
+  ["GET", /^\/__mock\/worlds\/([^/]+)$/, ([urlSlug]) => [200, worldWithVisitorData(urlSlug)]],
   [
     "PATCH",
     /^\/__mock\/worlds\/([^/]+)$/,
@@ -308,11 +333,11 @@ const routes = [
       if (!visitor) return [404, { message: "Visitor not found" }];
       const { dataObject, ...fields } = clone(body);
       Object.assign(visitor, fields);
-      if (dataObject) visitorRecord(visitor).dataObject = dataObject;
+      if (dataObject) visitorRecord(urlSlug, visitor).dataObject = dataObject;
       return [200, { ok: true }];
     },
   ],
-  ["GET", /^\/__mock\/users\/([^/]+)$/, ([profileId]) => [200, getUser(profileId)]],
+  ["GET", /^\/__mock\/users\/([^/]+)$/, ([profileId], _, query) => [200, getUser(query.get("world") ?? undefined, profileId)]],
   ["GET", /^\/__mock\/unhandled$/, () => [200, unhandledOutsideWorlds]],
   ["GET", /^\/__mock\/hooks$/, () => [200, hookCalls]],
   [
@@ -433,13 +458,14 @@ const routes = [
   [
     "GET",
     /^\/api\/v1\/user\/dataObjects\/([^/]+)\/get-data-object$/,
-    ([profileId]) => [200, readDataObject(getUser(profileId))],
+    ([profileId], _, __, ___, ____, req) => [200, readDataObject(getUser(jwtPayload(req.headers.interactivejwt).urlSlug, profileId))],
   ],
   [
     "PUT",
     new RegExp(`^/api/v1/user/dataObjects/([^/]+)/(${WRITE_ENDPOINTS})$`),
     // Analytics sent with the write are logged in the caller's world.
-    ([profileId, endpoint], body, _, world, holdMs) => writeDataObject(endpoint, getUser(profileId), body, world, holdMs),
+    ([profileId, endpoint], body, _, world, holdMs, req) =>
+      writeDataObject(endpoint, getUser(jwtPayload(req.headers.interactivejwt).urlSlug, profileId), body, world, holdMs),
   ],
 
   // ---- world ----
@@ -606,6 +632,32 @@ const routes = [
     },
   ],
   [
+    "PUT",
+    /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)\/set-custom-text$/,
+    ([slug, id], body) => {
+      // DroppedAsset.updateCustomTextAsset(style, text) (setCustomTextAssetCaption): text replaces the
+      // caption (omitted keeps it), each style attribute sent replaces the asset's own flat field (textColor,
+      // textSize, ...; textFontFamily also sets the legacy textFont), the rest keep their value. Answers the
+      // asset with those fields gathered under textStyle, like mapDroppedAssetProperties. The real route also
+      // refuses (400) an asset whose specialType isn't "text": here only one that names another specialType,
+      // so seeds don't have to set it.
+      const world = getWorld(slug);
+      const asset = world.assets[id];
+      if (!asset) return apiError(404, "Dropped asset not found");
+      if (asset.specialType !== undefined && asset.specialType !== "text") {
+        return apiError(400, "The asset you are trying to update is not a Custom Text Asset");
+      }
+      if (body.text !== undefined) asset.text = body.text;
+      const style = { ...body.style };
+      // ?? like mergeTextAssetStyle: a null attribute keeps the asset's value too.
+      if (style.textFontFamily != null) style.textFont = style.textFontFamily;
+      for (const key of TEXT_STYLE_KEYS) if (style[key] != null) asset[key] = style[key];
+      world.events.push({ ...clone(body), type: "set-custom-text", assetId: id });
+      const { dataObject, ...details } = asset;
+      return [200, { ...details, textStyle: Object.fromEntries(TEXT_STYLE_KEYS.map((key) => [key, asset[key]])) }];
+    },
+  ],
+  [
     "DELETE",
     /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)$/,
     ([slug, id]) => {
@@ -630,7 +682,9 @@ const routes = [
       const result = {};
       for (const [id, visitor] of Object.entries(getWorld(slug).visitors)) {
         const { dataObject, inventory, npc, voiceSession, ...details } = visitor;
-        if (npc) result[npc.playerId] = { visitorId: npc.playerId, displayName: "", username: npc.username, isAdmin: false };
+        if (npc) {
+          result[npc.playerId] = { visitorId: npc.playerId, displayName: "", username: npc.username, isAdmin: false, isNPCFromKey: npc.isNPCFromKey };
+        }
         result[id] = { ...details, visitorId: Number(id) };
       }
       if (zoneId) {
@@ -658,7 +712,7 @@ const routes = [
     /^\/api\/v1\/world\/([^/]+)\/visitors\/([^/]+)\/get-data-object$/,
     ([slug, id]) => {
       const visitor = getWorld(slug).visitors[id];
-      return visitor ? [200, readDataObject(visitorRecord(visitor))] : [404, { message: "Visitor not found" }];
+      return visitor ? [200, readDataObject(visitorRecord(slug, visitor))] : [404, { message: "Visitor not found" }];
     },
   ],
   [
@@ -667,7 +721,7 @@ const routes = [
     ([slug, id, endpoint], body, _, __, holdMs) => {
       const visitor = getWorld(slug).visitors[id];
       return visitor
-        ? writeDataObject(endpoint, visitorRecord(visitor), body, getWorld(slug), holdMs)
+        ? writeDataObject(endpoint, visitorRecord(slug, visitor), body, getWorld(slug), holdMs)
         : [404, { message: "Visitor not found" }];
     },
   ],
@@ -749,10 +803,13 @@ const routes = [
       const world = getWorld(slug);
       const visitor = world.visitors[id];
       const expression = expressionsOf(world).find((e) => e.id === expressionId);
-      if (!visitor || !expression) return [404, { message: "Visitor or expression not found" }];
-      // Owned expressions are ids in visitor.expressions; like the public API, granting one twice is a 409.
+      if (!visitor) return [404, { message: "Visitor or expression not found" }];
+      // grantUserExpression returns its ApiError instead of throwing it, and handleGrantUserExpression sends
+      // that with a 200: an unknown expression or one the visitor already owns (an id in visitor.expressions)
+      // answers 200 with the error's only enumerable field. The SDK resolves; check statusCode.
+      if (!expression) return [200, { statusCode: 404 }];
       visitor.expressions ||= [];
-      if (visitor.expressions.includes(expressionId)) return [409, { message: "Expression already granted" }];
+      if (visitor.expressions.includes(expressionId)) return [200, { statusCode: 409 }];
       visitor.expressions.push(expressionId);
       world.events.push({ type: "grant-expression", visitorId: id, expressionId, name: expression.name });
       return [200, { success: true }];
@@ -819,6 +876,8 @@ const routes = [
         playerId: 9000 + ++assetCounter,
         username: body.showNameplate === false ? "" : owned.item.name,
         isNPC: true,
+        // handleCreateNpc: "{publicKey}|{inventoryItemId}|{userInventoryItemId}"; getVisitors filters NPCs by it.
+        isNPCFromKey: `${PUBLIC_KEY}|${owned.item_id}|${owned.id}`,
         npcFollowPlayerId: body.stationary ? undefined : Number(id),
         avatarImageUrl: owned.item.metadata.spriteUrl,
       };
