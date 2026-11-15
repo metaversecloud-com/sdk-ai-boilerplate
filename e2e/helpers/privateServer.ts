@@ -67,10 +67,18 @@ export type PrivateServerResult<T> = {
  *
  * unhandledRejection: true preloads helpers/preload/unhandledRejection.cjs, which rejects a promise
  * nobody handles as soon as the app listens; `alive` then tells whether the process survived it.
+ *
+ * settleMs (default 500): how long to keep watching for an exit after `use` returns, e.g. when the request
+ * starts an SDK call the route doesn't await and that call fails after the response. Returns as soon as the
+ * process exits, so a longer settleMs only costs time when the app survives.
  */
 export const withPrivateServer = async <T>(
   use: (baseURL: string) => Promise<T>,
-  { unhandledRejection = false, env = {} }: { unhandledRejection?: boolean; env?: Record<string, string> } = {},
+  {
+    unhandledRejection = false,
+    env = {},
+    settleMs = 500,
+  }: { unhandledRejection?: boolean; env?: Record<string, string>; settleMs?: number } = {},
 ): Promise<PrivateServerResult<T>> => {
   const { port, release } = await reservePort();
   const baseURL = `http://localhost:${port}`;
@@ -141,8 +149,8 @@ export const withPrivateServer = async <T>(
       ),
       exit,
     ]);
-    // A crash right after the response: process.exit runs once the rejection is processed.
-    await Promise.race([exit, sleep(500)]);
+    // A crash right after the response: process.exit runs once the rejection is processed (settleMs).
+    await Promise.race([exit, sleep(settleMs)]);
     return { result, error, alive: await alive(), output };
   } finally {
     if (APP_IMAGE) {

@@ -8,7 +8,7 @@
 // State is partitioned by urlSlug, so every test seeds its own world and tests can run in parallel.
 // Test-only control routes live under /__mock:
 //   POST /__mock/worlds/:urlSlug   seed a world  { dataObject, assets, visitors, users?, inventoryItems?,
-//                                  expressions?, worldDetails?, userGroupDataObjects?, latencyMs?, delays?, failures?,
+//                                  expressions?, worldDetails?, userGroupDataObjects?, scenes?, latencyMs?, delays?, failures?,
 //                                  holdLocksDuringDelay? }
 //   PATCH /__mock/worlds/:urlSlug  change failures / delays / latencyMs / holdLocksDuringDelay mid-test
 //   GET  /__mock/worlds/:urlSlug   read world state + event log (particles, toasts, grants, analytics, ...)
@@ -362,6 +362,18 @@ const routes = [
         });
       }
       return [200, { success: true }];
+    },
+  ],
+
+  // Scene.get / fetchSceneById (handleGetSceneById): scenes are platform-wide, seeded per world under `scenes`
+  // and read from the caller's world (JWT urlSlug). Like getSceneById, an unknown id answers 200 with a null
+  // body, not a 404.
+  [
+    "GET",
+    /^\/api\/v1\/scenes\/([^/]+)$/,
+    ([sceneId], _, __, world) => {
+      const scene = world?.scenes?.[sceneId];
+      return [200, scene ? { ...clone(scene), id: sceneId } : null];
     },
   ],
 
@@ -980,7 +992,11 @@ const server = http.createServer(async (req, res) => {
     // Like the public API, world-scoped calls need an API key or a visitor's interactive JWT. Without
     // this, an app that forwards missing credentials to the SDK would pass against the mock. So does
     // public-key-analytics (the real route runs interactiveKeyValidator + gameEngineValidator).
-    const needsSession = url.pathname.startsWith("/api/v1/world/") || url.pathname === "/api/v1/analytics/public-key-analytics";
+    // So does GET /scenes/:id (interactiveKeyValidator + globalApiValidator).
+    const needsSession =
+      url.pathname.startsWith("/api/v1/world/") ||
+      url.pathname.startsWith("/api/v1/scenes/") ||
+      url.pathname === "/api/v1/analytics/public-key-analytics";
     if (needsSession && !req.headers.authorization && !jwtNonce(req.headers.interactivejwt)) {
       return send(res, 401, { message: "Missing API key or interactive JWT with an interactiveNonce" });
     }

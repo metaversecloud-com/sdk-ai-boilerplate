@@ -18,13 +18,14 @@ const ENTRY_PAGE_ACTION = config.ENTRY_PAGE_ACTION;
 const MISSING_CREDENTIALS = /missing required (\w+ )*parameters/i;
 
 for (const route of CREDENTIALED_ROUTES) {
-  const leak = route.knownBugs?.leaksSecret;
+  // A route that never answers can't be scanned: answersNever marks the test (it fails on the timeout).
+  const bug = route.knownBugs?.answersNever ?? route.knownBugs?.leaksSecret;
 
   test(`${route.method.toUpperCase()} ${route.basePath ?? "/api"}${route.path} never returns the interactive secret or a signed JWT`, async ({
     request,
     world,
   }) => {
-    test.fail(!!leak, leak);
+    test.fail(!!bug, bug);
     await world.seed({ isAdmin: true });
 
     const response = await callRoute(request, route, world.credentials());

@@ -1,7 +1,11 @@
 // Shared by every SDK app: keep this file identical across repos. Checks that mock-topia keeps the public
 // API's rules the platform and app tests rely on (each one verified against topia-public-api), by calling it
 // the way @rtsdk/topia does.
+import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
+import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { APIRequestContext } from "@playwright/test";
 import { E2E_API_KEY, INTERACTIVE_KEY, INTERACTIVE_SECRET, MOCK_TOPIA_URL } from "../../constants";
 import { expect, test, VISITOR_ID, type TopiaWorld } from "../../fixtures";
@@ -32,6 +36,25 @@ const sdk = (request: APIRequestContext, world: TopiaWorld, visitorId = VISITOR_
     post: (path: string, data: object = {}) => request.post(`${API}${path}`, { headers, data }),
     delete: (path: string) => request.delete(`${API}${path}`, { headers }),
   };
+};
+
+/** A raw RESP client for mock-redis: send(...args) resolves to the next reply's raw text. */
+const respClient = async (port: number) => {
+  const socket = net.connect(port);
+  await new Promise((resolve) => socket.once("connect", resolve));
+  let buffered = "";
+  socket.on("data", (chunk) => (buffered += chunk));
+  const read = async () => {
+    for (let i = 0; i < 100 && !buffered; i++) await new Promise((r) => setTimeout(r, 10));
+    const reply = buffered;
+    buffered = "";
+    return reply;
+  };
+  const send = (...args: string[]) => {
+    socket.write(`*${args.length}\r\n${args.map((a) => `$${Buffer.byteLength(a)}\r\n${a}\r\n`).join("")}`);
+    return read();
+  };
+  return { send, read, close: () => socket.destroy() };
 };
 
 const NPC_ITEM = { id: "npc-fox", name: "Fox", type: "NPC", status: "ACTIVE", metadata: { spriteUrl: "https://example.invalid/fox.png" } };
@@ -190,6 +213,63 @@ test.describe("mock-topia", () => {
 
     expect(await hookCalls(request, world, "ok")).toEqual([expect.objectContaining({ method: "POST", body: { text: "hi" } })]);
     expect((await allHookCalls(request)).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("scenes: a seeded scene by id, and null (not a 404) for an unknown one", async ({ request, world }) => {
+    await world.seed({ scenes: { "scene-a": { name: "Track A", width: 2000 } } });
+    const api = sdk(request, world);
+
+    expect(await (await api.get("/scenes/scene-a")).json()).toEqual({ id: "scene-a", name: "Track A", width: 2000 });
+    const missing = await api.get("/scenes/nope");
+    expect(missing.status()).toBe(200);
+    expect(await missing.json()).toBeNull();
+  });
+
+  test("extraAssets get their key as id unless they name one", async ({ request, world }) => {
+    await world.seed({ extraAssets: { "board-1": { uniqueName: "board" } } });
+
+    const asset = await (await sdk(request, world).get(`/world/${world.urlSlug}/assets/board-1`)).json();
+    expect(asset).toMatchObject({ id: "board-1", uniqueName: "board" });
+  });
+
+  test("mock-redis: strings with options, pub/sub, and an error for commands it doesn't know", async () => {
+    // Its own instance on a free port: the suite only starts mock-redis for apps with MOCK_REDIS.
+    const port = await new Promise<number>((resolve) => {
+      const probe = net.createServer().listen(0, () => {
+        const { port: free } = probe.address() as net.AddressInfo;
+        probe.close(() => resolve(free));
+      });
+    });
+    const e2eDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const server = spawn(process.execPath, ["mock-redis/server.mjs"], { cwd: e2eDir, env: { ...process.env, MOCK_REDIS_PORT: String(port) } });
+    try {
+      await new Promise((resolve, reject) => {
+        server.stdout.on("data", (chunk) => String(chunk).includes("listening") && resolve(undefined));
+        server.once("exit", reject);
+      });
+      const client = await respClient(port);
+      const subscriber = await respClient(port);
+
+      expect(await client.send("SET", "k", "v")).toBe("+OK\r\n");
+      expect(await client.send("SET", "k", "w", "NX")).toBe("$-1\r\n");
+      expect(await client.send("GET", "k")).toBe("$1\r\nv\r\n");
+      expect(await client.send("SET", "t", "1", "PX", "50")).toBe("+OK\r\n");
+      await new Promise((r) => setTimeout(r, 80));
+      expect(await client.send("GET", "t")).toBe("$-1\r\n");
+      expect(await client.send("INCRBY", "n", "5")).toBe(":5\r\n");
+      expect(await client.send("HSET", "h", "a", "1")).toBe(":1\r\n");
+      expect(await client.send("GET", "h")).toMatch(/^-WRONGTYPE/);
+
+      expect(await subscriber.send("SUBSCRIBE", "ch")).toBe("*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+      expect(await client.send("PUBLISH", "ch", "hi")).toBe(":1\r\n");
+      expect(await subscriber.read()).toBe("*3\r\n$7\r\nmessage\r\n$2\r\nch\r\n$2\r\nhi\r\n");
+
+      expect(await client.send("ZADD", "z", "1", "a")).toMatch(/^-ERR unknown command/);
+      client.close();
+      subscriber.close();
+    } finally {
+      server.kill();
+    }
   });
 
   test("API-key calls: the unversioned /api/world routes, unknown keys and worlds", async ({ request, world }) => {

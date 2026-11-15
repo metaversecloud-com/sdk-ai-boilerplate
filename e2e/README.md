@@ -23,7 +23,8 @@ e2e/scripts/test-image.sh        # image exactly as the Dockerfile builds it
 e2e/scripts/test-image.sh 24     # --build-arg NODE_VERSION=24, fails unless the image runs Node 24
 ```
 
-Ports: app `3100`, mock `3101` (override with `APP_PORT` / `MOCK_TOPIA_PORT`).
+Ports: app `3100`, mock `3101`, mock-redis `3102` when enabled (override with `APP_PORT` / `MOCK_TOPIA_PORT` /
+`MOCK_REDIS_PORT`; the Redis port defaults to `MOCK_TOPIA_PORT + 1`).
 
 If `npx playwright ...` prints an npm banner or dies with `EPIPE` when its output is piped, call the
 binary directly: `./node_modules/.bin/playwright test`.
@@ -40,17 +41,34 @@ First run in a repo forked from an older boilerplate:
 - If the repo tracks build output (e.g. `.next/`), `npm test` leaves the tree dirty: don't commit it.
 - Next.js inlines `process.env.NODE_ENV` at build time, so the health endpoint reports `"production"`:
   set `HEALTH_KNOWN_BUGS.incompleteContract` rather than changing the build.
+- Before trusting image mode (`E2E_APP_IMAGE`, the CI image job), check the repo's dev build-push workflow
+  history (`gh run list -R metaversecloud-com/<repo> --branch dev --limit 10`): some images have never built.
+  A Dockerfile that `ADD`s a folder the build doesn't create (e.g. `build/` while `npm run build` writes
+  `server/dist` and `client/build`) fails every push with `"/build": not found` (sdk-checkers#7). Fix the
+  Dockerfile in a separate commit of the e2e PR so the image the tests run is the one that ships.
+- A Dockerfile without `ARG NODE_VERSION` (a hardcoded `FROM node:20.10-alpine3.19`) ignores
+  `test-image.sh <version>`, which then stops with "Image runs v20..., expected Node 24": a Node comparison run
+  isn't possible until a Node-upgrade PR adds the `ARG`. Record it as not run rather than editing the Dockerfile
+  in the e2e PR.
+- Apps whose routes never call `getCredentials` (placeholders, API-key-driven webhooks) have no
+  `CREDENTIALED_ROUTES` entries: leave it empty, and pin what the routes do answer in `tests/app` (status,
+  body, that no Topia call was made: `world.events()` stays `[]`) so a change shows up in review. Apps whose
+  router isn't on `/api` (e.g. scene-manager's `/backend`): set `basePath` on the routes that do read
+  credentials, `HEALTH_PATH` if the health route moved, and `MALFORMED_JSON_REQUEST` if `express.json()` is
+  mounted only on that router (scene-manager#11).
 
 ## Layout
 
 | Path | What it is | When forking into a new app |
 |---|---|---|
-| `tests/platform/` | Checks every SDK app must pass: health endpoint contract, app shell fallback, credential checks, the interactive secret never reaching the browser (`callRoute.ts` sends each route its credentials), the process surviving an unhandled promise rejection. `mock.spec.ts` checks mock-topia itself keeps the public API's rules (see "What the mock mirrors") | Keep identical; only edit `app.config.ts` |
+| `tests/platform/` | Checks every SDK app must pass: health endpoint contract, app shell fallback, credential checks, the interactive secret never reaching the browser (`callRoute.ts` sends each route its credentials and gives up after `ANSWER_TIMEOUT_MS`, 10s), the process surviving an unhandled promise rejection, a malformed JSON body getting a clean 400, the page calling its own origin. `mock.spec.ts` checks mock-topia and mock-redis keep the real services' rules (see "What the mock mirrors") | Keep identical; only edit `app.config.ts` |
 | `app.config.ts` | The app's credentialed routes, their known bugs, the entry page, the app shell marker, health/process known bugs and test-only app env | See below |
-| `appEnv.ts` | The app's environment under test (mock Topia, fake S3, dummy AWS credentials, `COMMIT_HASH`/`TZ` locally) plus `APP_ENV`; used by the shared server, private instances and the Docker image. `mockForApp()` is mock-topia's `{ host, url }` as the app reaches it (`host.docker.internal` in image mode), for URLs the app itself calls; `HEALTH_PATH` | Keep identical; app variables go in `APP_ENV` |
+| `appEnv.ts` | The app's environment under test (mock Topia, fake S3, dummy AWS credentials, `COMMIT_HASH`/`TZ` locally, `REDIS_URL` with `MOCK_REDIS`) plus `APP_ENV`; used by the shared server, private instances and the Docker image. `mockForApp()` is `{ host, url, redisUrl }` as the app reaches mock-topia and mock-redis (`host.docker.internal` in image mode), for URLs the app itself calls; `HEALTH_PATH`, `MOCK_REDIS` | Keep identical; app variables go in `APP_ENV` |
+| `playwright.config.ts` | Starts mock-topia, mock-redis (`MOCK_REDIS`), any `EXTRA_WEB_SERVERS`, then the app (local build or `E2E_APP_IMAGE`); drawer-width viewport, UTC | Keep identical; per-app settings are in `app.config.ts` |
+| `mock-redis/server.mjs` | In-memory Redis (RESP2) for apps that keep state or fan SSE updates out through Redis; started only with `MOCK_REDIS = true` (see "Fake Redis") | Keep identical; add commands here (in the boilerplate) if an app needs more |
 | `tests/app/` | Tests for the boilerplate's example page | Replace with tests for the app's own pages and rules |
 | `fixtures.ts` | `world.seed({...})` builds one isolated Topia world per test; `world.url()` / `world.api()` / `world.credentials()` add the session credentials Topia appends (the nonce is unique per world) | Extend `seed` for the app's data objects |
-| `helpers/` | Shared test helpers apps import as needed. `leaderboardForgery.ts`: `forgeDisplayName(world, [999999])` for the `name\|score` leaderboard forgery. `sse.ts`: `openStream(world.api("/sse"))` reads an SSE stream from Node (`status`, `messages`, `close()`). `privateServer.ts`: `withPrivateServer(async (origin) => ..., { unhandledRejection?, env? })` runs a throwaway app instance for tests that may crash it, resolving `{ result, error, alive, output }`. `press.ts`: `press(locator)` clicks by dispatching the event, for 0x0 icon-only buttons (see `stubSdkIcons`). `hooks.ts`: `hookUrl(world, name)` a per-world fake webhook URL as the app reaches it, `hookCalls(request, world, name?)` / `allHookCalls(request)` / `channelCalls(request, channel, text)` what the app sent there (see "Outgoing webhooks") | Keep; import from `tests/app` |
+| `helpers/` | Shared test helpers apps import as needed. `leaderboardForgery.ts`: `forgeDisplayName(world, [999999])` for the `name\|score` leaderboard forgery. `sse.ts`: `openStream(world.api("/sse"))` reads an SSE stream from Node (`status`, `messages`, `close()`). `privateServer.ts`: `withPrivateServer(async (origin) => ..., { unhandledRejection?, env?, settleMs? })` runs a throwaway app instance for tests that may crash it, resolving `{ result, error, alive, output }`; `settleMs` (default 500) keeps watching for an exit after `use` returns. `press.ts`: `press(locator)` clicks by dispatching the event, for 0x0 icon-only buttons (see `stubSdkIcons`). `hooks.ts`: `hookUrl(world, name)` a per-world fake webhook URL as the app reaches it, `hookCalls(request, world, name?)` / `allHookCalls(request)` / `channelCalls(request, channel, text)` what the app sent there (see "Outgoing webhooks") | Keep; import from `tests/app` |
 | `mock-topia/server.mjs` | Fake Topia public API. Like the real one, world routes and `public-key-analytics` reject calls with neither an API key nor an interactive JWT carrying a nonce. Route handlers are `(params, body, query, world, holdMs, req)`: `world` the call's seeded world, `req` the raw request (`req.headers`, e.g. `jwtPayload(req.headers.interactivejwt)`) | Add routes for any endpoint the app calls that isn't there |
 | `mock-topia/catalog.json` (optional) | The app's default inventory catalog (array of `{ id, name, type, status?, description?, image_path?, metadata? }`); without it the default is four Quiz badges | Add one if the app caches the catalog process-wide (see `inventoryItems`) |
 
@@ -58,9 +76,9 @@ First run in a repo forked from an older boilerplate:
 
 | Export | What to set |
 |---|---|
-| `CREDENTIALED_ROUTES` | Every route that calls `getCredentials`: `{ method, path, data?, query?, knownBugs?, credentialsIn?, credentialsKey?, basePath? }`. `credentialsIn: "body"` for webhooks that read `getCredentials(req.body)` (credentials go as top-level JSON fields instead of the query string). `credentialsKey: "interactiveParams"` for routes that read them nested in the body (`getCredentials(req.body.interactiveParams)`; implies `"body"`). `query: { q: "x" }` for routes that need query parameters besides the credentials (a GET that answers early without them would make the secrets scan vacuous). `basePath` if the router isn't mounted on `/api` (e.g. `"/webhook"`). `knownBugs`: `leaksSecret`, `acceptsMissingCredentials`, `acceptsForeignCredentials`, `unnamedCredentialError`, `crashesServer` (see below). |
+| `CREDENTIALED_ROUTES` | Every route that calls `getCredentials`: `{ method, path, data?, query?, knownBugs?, credentialsIn?, credentialsKey?, basePath? }`. `credentialsIn: "body"` for webhooks that read `getCredentials(req.body)` (credentials go as top-level JSON fields instead of the query string). `credentialsKey: "interactiveParams"` for routes that read them nested in the body (`getCredentials(req.body.interactiveParams)`; implies `"body"`). `query: { q: "x" }` for routes that need query parameters besides the credentials (a GET that answers early without them would make the secrets scan vacuous). `basePath` if the router isn't mounted on `/api` (e.g. `"/webhook"`). `knownBugs`: `leaksSecret`, `acceptsMissingCredentials`, `acceptsForeignCredentials`, `unnamedCredentialError`, `crashesServer`, `answersNever` (see below). |
 | `ENTRY_PAGE` | The page Topia opens in the iframe, or `null` if the app has no page (webhooks only, e.g. connect4): the page-load and app-shell tests are skipped. |
-| `ENTRY_PAGE_KNOWN_BUGS` | `leaksSecret` if loading the page leaks the secret. |
+| `ENTRY_PAGE_KNOWN_BUGS` | `leaksSecret` if loading the page leaks the secret. `callsOtherOrigin` if the page sends `/api` (or any `localhost`) requests to another origin than the app's, typically a hardcoded `http://localhost:3000` API base (`VITE_API_URL` fallback) that only works in local development; the page's other app tests then route those calls to the app themselves (`page.route("http://localhost:3000/api/**", ...)`, sdk-checkers#7). |
 | `ENTRY_PAGE_SCAN` | What the page-load secret scan reads: `"api"` (default) the page's `/api` responses, at least one required; `"all"` every response from the app (document, scripts, `/api`) plus WebSocket frames, none required. Use `"all"` for socket-only pages (wiggle) or pages that call `/api` only after the player acts (teams-notifier), instead of `ENTRY_PAGE = null`. Server-sent-event streams are never read. |
 | `ENTRY_PAGE_ACTION` | Optional `async (page, world) => {...}` run after the page loads and before the scan, e.g. click "Join" so the page opens its socket or calls `/api`. Wait inside it for what it triggers (e.g. `expect(board).toBeVisible()`): the scan reads what arrived by then. |
 | `HEALTH_PATH` | The app's health endpoint, default `/api/system/health`. Used by the shared server's readiness check, private instances and `system.spec.ts`. |
@@ -68,7 +86,11 @@ First run in a repo forked from an older boilerplate:
 | `APP_SHELL_FALLBACK` | `false` for apps with real page routes that answer unknown paths with a 404 (e.g. Next.js): skips "unknown pages fall back to the app shell" instead of a `grepInvert`. Default `true`. |
 | `HEALTH_KNOWN_BUGS` | `{ incompleteContract: "<reason>" }` for apps whose health endpoint lacks fields of the contract (typically `envs.COMMIT_HASH` / `envs.BUILD_TIME` in apps forked before them, or `NODE_ENV` baked in by Next.js), instead of changing app code in the e2e PR. |
 | `PROCESS_KNOWN_BUGS` | `{ exitsOnUnhandledRejection: "<reason>" }` while a promise rejection nobody handles exits the process. Every app has it today: `@rtsdk/topia` registers an `unhandledRejection` hook that calls `process.exit(1)`, and an app's own logging handler doesn't stop it. Fix: `process.removeAllListeners("unhandledRejection")` before registering the app's handler. |
-| `APP_ENV` | Test-only app environment, merged over `appEnv.ts`: an object, or a function of the mock's address as the app reaches it (`({ host, url }) => ({ GOOGLE_API_ROOT_URL: `${url}/` })`). Blank every variable that would reach a real service. Older `app.config.ts` files without `HEALTH_KNOWN_BUGS`, `PROCESS_KNOWN_BUGS`, `APP_ENV`, `APP_SHELL_FALLBACK`, `ENTRY_PAGE_SCAN`, `ENTRY_PAGE_ACTION` or `HEALTH_PATH` keep working. |
+| `MALFORMED_JSON_REQUEST` | `{ method: "post" \| "put", path }` the malformed-JSON check posts to. Default: the first POST/PUT entry of `CREDENTIALED_ROUTES` (with its `basePath`), else `POST /api/e2e-malformed-json`, which reaches the parser when `express.json()` is app-wide. A 404 there means nothing parsed the body: point it at a route that does. `null` skips the test (an app that parses no JSON). |
+| `ERROR_KNOWN_BUGS` | `{ malformedJson: "<reason>" }` while a malformed JSON body doesn't get a clean 400: without an error-handling middleware Express answers with its default HTML page, which shows the stack trace and server file paths unless `NODE_ENV=production`. The boilerplate has it. Fix: an error middleware after the routes that answers `err.type === "entity.parse.failed"` with `res.status(400).json({ success: false, error: "Invalid JSON" })`. |
+| `MOCK_REDIS` | `true` for apps that use Redis (state, SSE fan-out): starts `mock-redis/server.mjs` and sets `REDIS_URL` (and `REDIS_CLUSTER_MODE: "false"`) for the shared server, private instances and the image. An app that reads other variable names sets them in `APP_ENV` from `mock.redisUrl`. Default `false`. |
+| `EXTRA_WEB_SERVERS` | Further processes to start before the app, as Playwright `webServer` entries (`{ command, url \| port, env?, reuseExistingServer?, timeout? }`), for a fake that can't live in mock-topia. Default none. |
+| `APP_ENV` | Test-only app environment, merged over `appEnv.ts`: an object, or a function of the mocks' addresses as the app reaches them (`({ host, url, redisUrl }) => ({ GOOGLE_API_ROOT_URL: `${url}/` })`). Blank every variable that would reach a real service. Older `app.config.ts` files without `HEALTH_KNOWN_BUGS`, `PROCESS_KNOWN_BUGS`, `APP_ENV`, `APP_SHELL_FALLBACK`, `ENTRY_PAGE_SCAN`, `ENTRY_PAGE_ACTION`, `HEALTH_PATH`, `MALFORMED_JSON_REQUEST`, `ERROR_KNOWN_BUGS`, `MOCK_REDIS` or `EXTRA_WEB_SERVERS` keep working (every read has a default), but the malformed-JSON test then runs unmarked. |
 
 `crashesServer`: some routes call `getCredentials` outside any try/catch, so a request without credentials
 becomes an unhandled rejection and `@rtsdk/topia`'s hook exits the process. The "rejects a request
@@ -80,6 +102,14 @@ The two foreign-credentials ones count an instance that went down as the `crashe
 destructure getCredentials' `{ error }` and throw it later crash on foreign credentials too, e.g.
 toast-notifications) and otherwise check as usual, with their own `acceptsForeignCredentials` /
 `unnamedCredentialError` markers.
+
+`answersNever`: with valid credentials the route never answers (typically a webhook whose handler returns
+on some path without `res.send`, e.g. race's checkpoint webhook when no race runs). Every platform call gives
+up after `ANSWER_TIMEOUT_MS` (10s, `callRoute.ts`) with "didn't answer within 10000ms", so a hang fails fast
+instead of eating the test timeout. `answersNever` marks the secrets test (which needs the answer) as
+`test.fail`; when the route answers again it flips and the marker goes. If the route also hangs on missing
+or foreign credentials, those tests fail on the timeout too: mark them with `acceptsMissingCredentials` /
+`acceptsForeignCredentials` / `unnamedCredentialError` (it doesn't reject them), all with the same reason.
 
 Leave server-sent-event routes (e.g. `GET /sse`) out of `CREDENTIALED_ROUTES`: with valid credentials
 the stream never ends, so the platform tests can't read the body and time out. Test their credential
@@ -112,6 +142,8 @@ check run the request through `withPrivateServer` and scan its `output`.
 | `worldDetails: {...}` | Fields `GET /world-details` (`World.fetchDetails`) returns over the default `{ urlSlug, name, width: 4000, height: 4000 }`. |
 | `userGroupDataObjects: [{...}]` | What `Visitor.fetchUserGroupDataObject` returns for the world (default none). |
 | `visitor: { npc, voiceSession }` | Start with an NPC (`{ playerId, username, ... }`) or an AI voice session (`{ publicKey, npcPlayerId }`; another `publicKey` stands for another app's session). |
+| `scenes: { [sceneId]: { name, description, previewImgUrl, width, height, ... } }` | What `GET /scenes/:sceneId` (`Scene.get` / `fetchSceneById`) returns, with `id` set to the key; read from the caller's world (JWT `urlSlug`). An unknown id answers 200 with a `null` body, like the real `getSceneById` (not a 404). |
+| `extraAssets: { [id]: {...} }` | Further dropped assets; `id` defaults to the key (an explicit `id` wins). |
 
 Profiles are global in the mock (one user data object per `profileId`, across worlds). An explicit
 `profileId` in `otherVisitors` or a `users` key like `"alice"` is shared by every test that uses it and
@@ -165,10 +197,26 @@ new endpoints can't pass silently. A full app example lives in sdk-quiz (`e2e/te
 - NPCs and AI voice sessions, with `handleCreateNpc` / `handleGetNpc` / `handleDeleteNpc` / `handleStart|StopNpcVoiceSession`'s rules: `create-npc` needs an owned inventory item of type `NPC` whose catalog metadata has a `spriteUrl` (403 for another player's item), validates `spawnEffect` the same way, 409 for a second NPC unless `replace`; `get-npc` answers `null` without one; `start-npc-voice-session` needs the NPC and an `ek_` key, lets the same app restart, 409 when another app holds the session; `stop-npc-voice-session` is idempotent, 403 for another app's session; deleting or replacing the NPC ends the session (a `stopAiNpcVoice` event, the socket event the browser gets). Events: `create-npc`, `delete-npc`, `start-npc-voice-session` (with the voice config), `stop-npc-voice-session`.
 - API-key calls (an `Authorization` header and no interactive credentials) skip the public key check like `interactiveKeyValidator`; the only key accepted is `E2E_API_KEY` (`constants.ts`; `APP_ENV = { API_KEY: E2E_API_KEY }`), an unknown key is a 404 and an unseeded world a 401, like `apiKeyValidator`. The world routes also answer under `/api/world/...` (no `/v1`), like the real API.
 - Routes added since the error format was checked (`apiError` in `server.mjs`) answer errors like the real API, `{ errors: [{ message }] }`, which `@rtsdk/topia` reports as the error's message. Older routes still answer `{ message }` (see Known gaps).
+- `GET /scenes/:sceneId` (`Scene.get`): seeded `scenes`, else 200 `null` like `getSceneById` (`handleGetSceneById` answers `res.json(null)` when the `kits` doc doesn't exist). Needs a session or API key like the other world routes (the real `globalApiValidator` answers 400 without one, the mock 401).
 - `PATCH /__mock/worlds/:slug/visitors/:id` (`world.updateVisitor({...})`) changes visitor fields mid-test. Route handlers may be async.
 - Latency, so concurrent requests overlap like they do against the real API: `world.seed({ latencyMs: 25 })` delays every public-API call into the world; `world.seed({ delays: { "/visitors/42/set-data-object": 400 } })` delays only calls whose `METHOD /api/v1/world/...` contains the key, so a test can line two requests up deterministically.
 - The browser may only reach localhost: `fixtures.ts` aborts every other request. It runs in UTC like the app (`timezoneId` in `playwright.config.ts`); a test can pick another zone with `test.use({ timezoneId })`.
 - `interactiveNonce` is `e2e-nonce-<urlSlug>`, so apps that key state by nonce across worlds (SSE connections, caches) don't mix up parallel tests.
+
+### Fake Redis
+
+`MOCK_REDIS = true` (app.config.ts) starts `mock-redis/server.mjs`, generalized from the copies in sdk-race#53,
+sdk-chess-game#66, jukebox#29 and leaderboard#7, and points `REDIS_URL` at it (`mock.redisUrl` in `APP_ENV`
+for other variable names). It speaks RESP2 to node-redis v4 (what every Redis app uses, single node: set
+`REDIS_CLUSTER_MODE: "false"`, done by `appEnv.ts`): `GET`, `SET` (`EX`/`PX`/`EXAT`/`PXAT`/`NX`/`XX`/`GET`/
+`KEEPTTL`), `SETEX`, `MGET`, `DEL`/`UNLINK`, `EXISTS`, `INCR`/`INCRBY`/`DECR`/`DECRBY`, `EXPIRE`/`PEXPIRE`/
+`TTL`/`PTTL` (expiry checked on read), `KEYS`, `HSET`/`HGET`/`HGETALL`/`HDEL`, `PUBLISH`/`SUBSCRIBE`/
+`UNSUBSCRIBE`/`PSUBSCRIBE`/`PUNSUBSCRIBE`, `PING`/`ECHO`/`INFO`/`QUIT`, and acknowledges the handshake
+(`AUTH`, `SELECT`, `CLIENT ...`, `READONLY`). Any other command answers `-ERR unknown command` and is logged to
+the webServer's stderr (`[mock-redis] unhandled command X`): the earlier copies answered OK to everything,
+which let an unimplemented command pass silently. Add missing commands to the boilerplate's copy. One keyspace
+and one set of channels for the whole suite: key per world, and expect a channel shared by every world
+(e.g. `${INTERACTIVE_KEY}_JUKEBOX`) to carry other tests' messages.
 
 ### Event fields
 
@@ -204,7 +252,7 @@ Not in the boilerplate because they're app-specific. Copy from the PR when an ap
 | Extension | PR |
 |---|---|
 | Fake S3 (uploads) | sdk-scavenger-hunt#56, sdk-quest#53 |
-| Fake Redis (`mock-redis/`) and scenes | sdk-race#53 |
+| Fake Redis (`mock-redis/`, origin; now `MOCK_REDIS`) and scenes | sdk-race#53 |
 | NPCs and expressions | virtual-pet#54 |
 | JWT signature checks, multi-app and ecosystem data objects | sdk-leaderboard#13 |
 | `set-custom-text` | sdk-tictactoe#41 |
@@ -232,6 +280,10 @@ Not in the boilerplate because they're app-specific. Copy from the PR when an ap
 | `/hooks/*` webhook fake (origin), `userGroupDataObjects`, page that calls `/api` only on an action | teams-notifier#43 |
 | `drop-scene`, `set-private-zone`, `set-asset-interactive-settings`, zone-filtered visitors, usernames, lock-bucket waits | breakout#23 |
 | Socket-only page: canvas recorder and socket `emitRaw` helpers, analytics per session world (origin) | sdk-wiggle#23 |
+| No page and no credentialed routes, router on `/backend`, malformed-JSON stack-trace check (origin) | scene-manager#11 |
+| `mock-redis` on an old race fork, hanging checkpoint webhook (origin of `answersNever`), crash after the response (origin of `settleMs`) | leaderboard#7 |
+| `GET /scenes/:id` + `scenes` seed (origin), scene switching | scene-swapper#22 |
+| Old boilerplate example page, Dockerfile that never built, hardcoded `localhost:3000` API base (origin of the origin check), un-awaited delete crashing the server, `extraAssets` id default | sdk-checkers#7 |
 
 ## Known gaps
 
@@ -239,7 +291,7 @@ Not in the boilerplate because they're app-specific. Copy from the PR when an ap
   message. Most mock routes predate that check and answer `{ message }`, so an SDK error's `message` is
   axios' "Request failed with status code N" there instead of the real text: don't assert on it.
 - Scenes: `drop-scene` drops one placeholder asset instead of the scene's assets, and there is no per-app
-  hook to seed a scene's contents. Apps that read what a scene drop created seed those assets themselves
+  hook to seed a scene's contents (`scenes` only feeds `Scene.get`). Apps that read what a scene drop created seed those assets themselves
   (see sdk-race#53, breakout#23).
 - External-API failure injection per world only covers `/hooks/<urlSlug>/...`; app-specific fakes (YouTube,
   OpenAI) use magic ids or keys instead (jukebox#29, sdk-npc-voice-session#11).
@@ -259,6 +311,7 @@ as the fix. In `tests/platform/` the markers come from `knownBugs` on each route
 |---|---|---|
 | `platform/credentials.spec.ts` "names the credential problem" (`unnamedCredentialError`) | `getCredentials` returns `{ error }` instead of throwing, so requests with bad credentials carry on and fail later on a Topia call. | Throw from `getCredentials` (protected file: needs explicit approval). Tracked in EXP-428. |
 | `platform/system.spec.ts` "a promise rejection nobody handles doesn't take the server down" (`exitsOnUnhandledRejection`) | `@rtsdk/topia`'s `unhandledRejection` hook calls `process.exit(1)`; the handler in `server/index.ts` meant to prevent crashes runs too late to matter. | `process.removeAllListeners("unhandledRejection")` before `server/index.ts` registers its handler (or drop the exit from the SDK). |
+| `platform/system.spec.ts` "a malformed JSON body gets a 400 without a stack trace or server paths" (`ERROR_KNOWN_BUGS.malformedJson`) | No error-handling middleware: `express.json()`'s parse error reaches Express' default handler, whose HTML page shows the stack trace and file paths (`NODE_ENV` isn't `production` under test, nor set by the Dockerfile). | An error middleware in `server/index.ts` answering `entity.parse.failed` with a JSON 400. |
 
 The interactive secret leak (EXP-429) is fixed here: `server/index.ts` registers the
 `cleanReturnPayload` scrubber on `/api` before the routes, and the scrubber also strips
@@ -281,9 +334,15 @@ never runs; set `leaksSecret` on the routes that leak until they take the same f
 - `page.clock.install()` doesn't pause time: the clock keeps running from the given time. Use
   `page.clock.pauseAt(...)` (or `install` + `pauseAt`) to stop it and `runFor` / `fastForward` to advance.
 - `withPrivateServer(use)`: return from `use` as soon as the requests are done; don't wait there for
-  something to happen later (a poll, a timeout). `use` races the instance's exit and the instance is killed
-  as soon as `use` returns, so a crash shows up as `alive: false`; waits inside only slow every run down.
-  Assert on `result`, `alive` and `output` after it returns.
+  something to happen later (a poll, a timeout). `use` races the instance's exit, and after it returns the
+  instance is watched for `settleMs` more (default 500ms) before it's killed, so a crash shows up as
+  `alive: false`. Assert on `result`, `alive` and `output` after it returns.
+- Failure injection on SDK calls a route doesn't await (e.g. `droppedAsset.deleteDroppedAsset()` without
+  `await`, then `res.json({ success: true })`): the route answers before Topia does and the rejection lands
+  later, where `@rtsdk/topia`'s hook exits the process. Run it on a private instance with `failures` seeded
+  and a `settleMs` longer than the call takes (e.g. `withPrivateServer(use, { settleMs: 3000 })`), then
+  `test.fail` on `alive` only after checking the request got an answer (sdk-checkers#7). Against the shared
+  server it would take every later test down with `ECONNREFUSED`.
 - Process-wide in-memory state (a module-level `Map`, a cache, an `EventEmitter` registry) is shared by every
   test, since all workers hit the same app process. Key everything a test creates by its world (`world.urlSlug`,
   `world.scopedId(...)`, `test.use({ uniqueAssetId: true })`) so parallel tests can't see each other's state.
@@ -299,3 +358,133 @@ never runs; set `leaksSecret` on the routes that leak until they take the same f
   across all worlds and can't be paused with `page.clock`, which only controls the browser. Seed state the
   timer leaves alone (e.g. a fresh `turnStartedAt`), or wait for its effect with `expect.poll` and a
   timeout longer than its interval; never assume it hasn't run yet.
+
+## Upgrading an app's e2e/ to the latest boilerplate
+
+For an app PR whose `e2e/` was copied from an older boilerplate. The source is this repo's `e2e/` on
+`test/playwright-e2e` (sdk-ai-boilerplate#9). Work on the app's e2e branch; if a Node-upgrade branch was
+merged from it, merge the e2e branch into that one afterwards.
+
+### 1. Copy the shared files verbatim
+
+Overwrite these with the boilerplate's copies; never edit them in an app (fix the boilerplate instead):
+
+- `playwright.config.ts`
+- `appEnv.ts`
+- `constants.ts`
+- `package.json`, `package-lock.json` (if the root `.gitignore` ignores lockfiles: `git add -f e2e/package-lock.json`)
+- `README.md`
+- `tests/platform/callRoute.ts`, `tests/platform/credentials.spec.ts`, `tests/platform/mock.spec.ts`,
+  `tests/platform/secrets.spec.ts`, `tests/platform/system.spec.ts`
+- `helpers/hooks.ts`, `helpers/leaderboardForgery.ts`, `helpers/press.ts`, `helpers/privateServer.ts`,
+  `helpers/sse.ts`, `helpers/preload/unhandledRejection.cjs`
+- `mock-redis/server.mjs` (only needed with `MOCK_REDIS = true`; replace an app's own copy)
+- `scripts/test-image.sh`
+
+`.github/workflows/e2e.yml` is managed by Terraform (config_texts), not copied by hand.
+
+Moving app edits out of them:
+
+- `playwright.config.ts`: inline env (`const appEnv = {...}`) goes to `APP_ENV` in `app.config.ts`, minus what
+  `appEnv.ts` already sets (`PORT`, `NODE_ENV`, `INSTANCE_*`, `INTERACTIVE_*`, `API_KEY`, AWS/S3, `COMMIT_HASH`,
+  `TZ`). A mock-redis webServer entry becomes `MOCK_REDIS = true` (drop `MOCK_REDIS_PORT` and `REDIS_URL` /
+  `REDIS_CLUSTER_MODE` from `app.config.ts` and `constants.ts`). Any other extra server goes to
+  `EXTRA_WEB_SERVERS`. `grepInvert: /unknown pages fall back.../` becomes `APP_SHELL_FALLBACK = false`. A desktop
+  viewport becomes `test.use({ viewport: { width: 1280, height: 720 } })` in the specs that need it. A
+  hardcoded `/api/system/health` URL becomes `HEALTH_PATH`.
+- `constants.ts`: app constants (e.g. jukebox's `GOOGLE_API_KEY`) move to `app.config.ts` or the spec that
+  uses them; update their imports.
+
+### 2. Merge the app-extended files
+
+These hold the app's own code on top of the boilerplate's. Take the boilerplate's current file and re-apply
+the app's additions (diff the app's copy against the boilerplate commit it was copied from to find them):
+
+- `mock-topia/server.mjs`: keep the app's routes and fakes (external APIs, app-specific endpoints). Drop app
+  copies of routes the boilerplate now has (visitors list/get, `assets-with-unique-name`, asset list and
+  delete, `set-clickable-link-multi`, `change-click-type`/`change-media-type`, `set-private-zone`,
+  `set-asset-interactive-settings`, `drop-scene`, `scenes/:id`, `world-details`, expressions and
+  `grant-expression`, `grant-user-inventory-item`, `get-user-inventory-items`,
+  `update-visitor-inventory-item-quantity`, `user-group-data-object`, NPC and voice-session routes,
+  `auth/interactive-credentials`, `/hooks/*`, S3, `/images/*`): the boilerplate's follow the real API more
+  closely and `mock.spec.ts` checks them. Extra seed fields an app route reads go through the seed body as is.
+- `fixtures.ts`: keep the app's seed options and helpers on top of the boilerplate's `SeedOptions` /
+  `TopiaWorld`.
+- `app.config.ts`: keep the app's values. Add the new exports only where needed (every read has a default):
+  `ERROR_KNOWN_BUGS`, `MALFORMED_JSON_REQUEST`, `ENTRY_PAGE_KNOWN_BUGS.callsOtherOrigin`, `knownBugs.answersNever`,
+  `MOCK_REDIS`, `EXTRA_WEB_SERVERS`.
+- `tests/app/**` and `mock-topia/catalog.json`: the app's own; only adjust them for the behaviour changes below.
+
+### 3. Run and triage
+
+`npm test` (with the app's ports), then fix what flipped using the list below. Every new `test.fail` marker
+gets its tracking reason and is checked by removing it once (the test must fail on the expected assertion).
+Finish with `npx playwright test --repeat-each=3`, push, and wait for the PR's `E2E` check.
+
+Behaviour changes since c5b7d55 that can flip app tests (apps copied earlier also get the ones before it):
+
+Platform tests and config:
+
+1. New test "a promise rejection nobody handles doesn't take the server down": fails in every app until
+   `PROCESS_KNOWN_BUGS.exitsOnUnhandledRejection` is set (all apps have the bug, see Known bugs).
+2. New test "a malformed JSON body gets a 400 without a stack trace or server paths": apps without an error
+   middleware fail on the stack trace: set `ERROR_KNOWN_BUGS.malformedJson`. A 404 means the default request
+   missed the parser: set `MALFORMED_JSON_REQUEST`. `null` for apps that parse no JSON.
+3. New test "the page calls its own server, not a hardcoded origin" (skipped with `ENTRY_PAGE = null`): fails
+   for pages with a hardcoded API base (`ENTRY_PAGE_KNOWN_BUGS.callsOtherOrigin`), and like the secrets scan it
+   needs one `/api` call to the app's origin on load unless `ENTRY_PAGE_SCAN = "all"`.
+4. `crashesServer` now moves all three credential tests of the route to private instances; the two
+   foreign-credential tests count an instance that went down as `crashesServer` and otherwise check as usual
+   with their own markers. A private instance that fails to start fails the test instead of satisfying
+   `test.fail`.
+5. The secrets scan's "the route didn't get the credentials" matches `/missing required (\w+ )*parameters/i`,
+   so "Missing required body parameters" now counts: fix the route's `credentialsIn` / `credentialsKey`.
+6. Platform calls give up after 10s (`ANSWER_TIMEOUT_MS`): a route that hangs fails with "didn't answer within
+   10000ms" instead of the 30s test timeout; mark it `answersNever` (and see `answersNever` above).
+7. `withPrivateServer` watches for an exit for `settleMs` (default 500ms) after `use` returns: drop waits
+   inside `use` that only existed to catch a late crash and pass `{ settleMs }` instead.
+8. Pages render at drawer width (400x900) and in UTC: UI tests that relied on a desktop layout can find
+   elements hidden or overlapping (`test.use({ viewport })`). Fake S3 is always wired with dummy AWS
+   credentials and `S3_BUCKET` blank unless `APP_ENV` sets `FAKE_S3_BUCKET`; apps reading AWS credentials
+   under other names must blank them in `APP_ENV`.
+
+mock-topia:
+
+9. Visitor and user data objects are one record per profile: `visitorData` and `userData` (and the app's
+   `Visitor` / `User` writes) see the same object.
+10. Calls outside `/world/` (inventory, user data objects, expressions, scenes, ...) belong to the world in the
+    caller's JWT, so seeded `delays`, `failures`, catalogs and analytics apply to them.
+11. Analytics: a write's analytics get `urlSlug` set to the authenticated world, whatever the app sent;
+    `public-key-analytics` logs each analytic in the session's world (JWT `urlSlug`) with extra fields
+    `sentUrlSlug`, `sessionVisitorId`, `source: "public-key"`, and drops per-player names
+    (`<name>-<20-char id>`, logged as `analytics-rejected`). Exact `toEqual` on analytics events fails: use
+    `expect.objectContaining`.
+12. `assets-with-unique-name` with `partial` is a prefix match (not a substring), and any `partial` value
+    counts, `partial=false` included.
+13. `DELETE /world/:slug/assets/:id` answers `{ success: true }` (was `{}`) and 404 for an asset that doesn't
+    exist, so deleting twice is now an error in the app.
+14. Seeded visitors have `username` (`e2e-player`, `player-<id>`): exact `toEqual` on visitor objects fails.
+15. `GET /world/:slug/visitors/:id` answers a map keyed by visitorId like the real route: an app mock that
+    overrides it with the bare visitor must drop the override.
+16. `update-visitor-inventory-item-quantity` has the real semantics: an upsert that adds `quantity` as a delta
+    (`delta || 1`, so 0 counts as +1), no floor at 0 (reads hide entries at 0 or below), the user item's
+    metadata reset to `{}`, 201 with the real fields (`inventoryItem` is the user item id), `modify-item`
+    events `{ name, quantity: delta, total }`.
+17. Inventory entries: `metadata` is the user item's own (default `{}`), the catalog's is in `itemMetadata` and
+    `item.metadata`; the default catalog is `mock-topia/catalog.json` when present.
+18. Route handlers are `(params, body, query, world, holdMs, req)`: old `(params, body, query)` handlers keep
+    working; one that used a fourth parameter for something else must move it. `world` is the seeded world or
+    undefined.
+19. An `Authorization` header without `publickey` / `interactivejwt` is API-key mode: only `E2E_API_KEY` is
+    accepted (unknown key 404, unseeded world 401). An app that calls the API with its own key needs
+    `APP_ENV = { API_KEY: E2E_API_KEY }`; a test sending `Authorization` gets the same rules. World routes also
+    answer under `/api/world/...`.
+20. Routes added since the error-format check answer `{ errors: [{ message }] }`, so the SDK error's message is
+    the real text there (it was axios' "Request failed with status code N").
+21. `GET /world/:slug/visitors` filters by `?droppedAssetId=` and lists NPCs created with the app's key.
+22. `failures` / `delays` keys also match the query string, so a short key can now match more calls.
+23. `extraAssets` get `id` = their key unless they name one: exact `toEqual` on such an asset needs the `id`.
+24. `GET /scenes/:sceneId` exists: an app calling `Scene.get` used to fail as unhandled and now gets the seeded
+    `scenes` entry or `null`.
+25. mock-redis answers an error for commands it doesn't implement (app copies answered OK to anything): a
+    Redis call that "worked" before may now reject; add the command to the boilerplate's mock-redis.

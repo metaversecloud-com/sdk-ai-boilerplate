@@ -1,6 +1,9 @@
+// Shared by every SDK app: keep this file identical across repos. Per-app settings (MOCK_REDIS,
+// EXTRA_WEB_SERVERS, APP_ENV, HEALTH_PATH) live in app.config.ts.
 import { defineConfig, devices } from "@playwright/test";
-import { APP_IMAGE, appEnv, HEALTH_PATH } from "./appEnv";
-import { APP_PORT, E2E_API_KEY, INTERACTIVE_KEY, MOCK_TOPIA_PORT } from "./constants";
+import * as config from "./app.config";
+import { APP_IMAGE, appEnv, HEALTH_PATH, MOCK_REDIS } from "./appEnv";
+import { APP_PORT, E2E_API_KEY, INTERACTIVE_KEY, MOCK_REDIS_PORT, MOCK_TOPIA_PORT } from "./constants";
 
 // E2E_APP_IMAGE=<image> runs the app from a Docker image (what ships, e.g. to test a Node upgrade)
 // instead of local Node. The real app (production build) talks to an in-memory fake of the Topia public
@@ -47,6 +50,19 @@ export default defineConfig({
       env: { MOCK_TOPIA_PORT: String(MOCK_TOPIA_PORT), INTERACTIVE_KEY, E2E_API_KEY },
       reuseExistingServer: !process.env.CI,
     },
+    // Opt-in fake Redis (MOCK_REDIS in app.config.ts; appEnv.ts sets REDIS_URL).
+    ...(MOCK_REDIS
+      ? [
+          {
+            command: "node mock-redis/server.mjs",
+            port: MOCK_REDIS_PORT,
+            env: { MOCK_REDIS_PORT: String(MOCK_REDIS_PORT) },
+            reuseExistingServer: !process.env.CI,
+          },
+        ]
+      : []),
+    // Any other fake the app needs as its own process (EXTRA_WEB_SERVERS in app.config.ts), started before the app.
+    ...(config.EXTRA_WEB_SERVERS ?? []),
     {
       ...appServer,
       url: `http://localhost:${APP_PORT}${HEALTH_PATH}`,

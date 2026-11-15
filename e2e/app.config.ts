@@ -28,6 +28,14 @@ export type KnownBugs = {
    * that route needs this.
    */
   crashesServer?: string;
+  /**
+   * With valid credentials the route never answers (e.g. a webhook handler with a path that returns without
+   * res.send). Platform calls give up after ANSWER_TIMEOUT_MS (tests/platform/callRoute.ts); this marks the
+   * secrets test, which needs the answer, as test.fail. A route that also hangs on missing or foreign
+   * credentials fails those tests on the timeout too: mark them with acceptsMissingCredentials /
+   * acceptsForeignCredentials / unnamedCredentialError (it doesn't reject them).
+   */
+  answersNever?: string;
 };
 
 export type RouteSpec = {
@@ -78,8 +86,12 @@ export const CREDENTIALED_ROUTES: RouteSpec[] = [
  */
 export const ENTRY_PAGE: string | null = "/";
 
-/** Bugs seen when loading ENTRY_PAGE (only leaksSecret applies). */
-export const ENTRY_PAGE_KNOWN_BUGS: Pick<KnownBugs, "leaksSecret"> = {};
+/**
+ * Bugs seen when loading ENTRY_PAGE. leaksSecret: a response to the page carries the secret. callsOtherOrigin:
+ * the page sends /api (or any localhost) requests somewhere other than the app's own origin, typically a
+ * hardcoded API base such as http://localhost:3000 that only works in local development.
+ */
+export const ENTRY_PAGE_KNOWN_BUGS: Pick<KnownBugs, "leaksSecret"> & { callsOtherOrigin?: string } = {};
 
 /**
  * What the page-load secret scan reads. "api" (default): the page's /api responses, at least one required.
@@ -128,13 +140,53 @@ export const PROCESS_KNOWN_BUGS: { exitsOnUnhandledRejection?: string } = {
 };
 
 /**
+ * The request system.spec sends a malformed JSON body to. Default: the first POST/PUT route in
+ * CREDENTIALED_ROUTES, else POST /api/e2e-malformed-json (which reaches the parser when express.json() is
+ * registered app-wide). null skips the test, for apps that never parse JSON bodies.
+ */
+export const MALFORMED_JSON_REQUEST: { method: "post" | "put"; path: string } | null | undefined = undefined;
+
+/**
+ * Bugs of the app's error responses.
+ * malformedJson: a malformed JSON body doesn't get a clean 400: typically Express' default error page, which
+ * shows the stack trace and server file paths unless NODE_ENV=production (there's no error-handling
+ * middleware after express.json()). Fix: an error middleware that answers body-parser errors
+ * (err.type === "entity.parse.failed") with res.status(400).json({ success: false, error: "Invalid JSON" }).
+ */
+export const ERROR_KNOWN_BUGS: { malformedJson?: string } = {
+  malformedJson: "no error middleware: Express' default error page shows the stack trace (NODE_ENV isn't production)",
+};
+
+/**
+ * true starts mock-redis/server.mjs (an in-memory Redis) next to mock-topia and points REDIS_URL at it
+ * (REDIS_CLUSTER_MODE "false"; appEnv.ts), for apps that keep state or fan live updates out through Redis.
+ * Default false. An app reading another variable sets it in APP_ENV from mock.redisUrl.
+ */
+export const MOCK_REDIS: boolean = false;
+
+/**
+ * Further processes to start before the app, as Playwright webServer entries (e.g. a fake of an external
+ * service that can't live in mock-topia). Default none.
+ */
+export const EXTRA_WEB_SERVERS: Array<{
+  command: string;
+  url?: string;
+  port?: number;
+  env?: Record<string, string>;
+  reuseExistingServer?: boolean;
+  timeout?: number;
+}> = [];
+
+/**
  * Extra environment for the app under test (merged over the defaults in appEnv.ts; also passed to
  * private instances and the Docker image). A function gets the mock's address as the app reaches it
- * ({ host: "localhost:3101" or "host.docker.internal:3101", url: "http://<host>" }), for fakes of
+ * ({ host: "localhost:3101" or "host.docker.internal:3101", url: "http://<host>", redisUrl }), for fakes of
  * external APIs served by mock-topia. Fake S3 opt-in: { S3_BUCKET: FAKE_S3_BUCKET } (constants.ts).
  * Blank every variable that would point the app at a real service.
  */
-export const APP_ENV: Record<string, string> | ((mock: { host: string; url: string }) => Record<string, string>) = (
+export const APP_ENV:
+  | Record<string, string>
+  | ((mock: { host: string; url: string; redisUrl: string }) => Record<string, string>) = (
   mock,
 ) => ({
   // The boilerplate's example posts player stats to the leaderboard app.
