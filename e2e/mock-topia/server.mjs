@@ -8,7 +8,9 @@
 // State is partitioned by urlSlug, so every test seeds its own world and tests can run in parallel.
 // Test-only control routes live under /__mock:
 //   POST /__mock/worlds/:urlSlug   seed a world  { dataObject, assets, visitors, users?, inventoryItems?,
-//                                  expressions?, latencyMs?, delays?, failures? }
+//                                  expressions?, worldDetails?, latencyMs?, delays?, failures?,
+//                                  holdLocksDuringDelay? }
+//   PATCH /__mock/worlds/:urlSlug  change failures / delays / latencyMs / holdLocksDuringDelay mid-test
 //   GET  /__mock/worlds/:urlSlug   read world state + event log (particles, toasts, grants, analytics, ...)
 //   PATCH /__mock/worlds/:urlSlug/visitors/:id   change visitor fields mid-test (position, isAdmin, ...)
 //   GET  /__mock/users/:profileId  read a user data object
@@ -16,33 +18,55 @@
 //   GET  /__mock/s3                objects in the fake S3 [{ bucket, key, size, contentType }] (all tests)
 //   GET  /__mock/health
 
+import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 
 const PORT = Number(process.env.MOCK_TOPIA_PORT || 3101);
 const PUBLIC_KEY = process.env.INTERACTIVE_KEY || "e2e-public-key";
 
-// Default ecosystem inventory catalog; world.seed({ inventoryItems }) replaces it for one world.
-const INVENTORY_ITEMS = ["Perfect Score", "Lightning Round", "Quiz Master", "Top 3 Finisher"].map((name, i) => ({
-  id: `badge-${i + 1}`,
-  name,
-  type: "BADGE",
-  status: "ACTIVE",
-  description: `${name} badge`,
-  image_path: `https://example.invalid/badges/${i + 1}.png`,
-}));
+// Default ecosystem inventory catalog: the app's own from catalog.json next to this file if there is one,
+// else four Quiz badges. world.seed({ inventoryItems }) replaces it for one world, but apps that cache the
+// catalog process-wide (an inventory cache) only ever see the first world's: put theirs in catalog.json.
+const CATALOG_FILE = new URL("./catalog.json", import.meta.url);
+const INVENTORY_ITEMS = existsSync(CATALOG_FILE)
+  ? JSON.parse(readFileSync(CATALOG_FILE, "utf8"))
+  : ["Perfect Score", "Lightning Round", "Quiz Master", "Top 3 Finisher"].map((name, i) => ({
+      id: `badge-${i + 1}`,
+      name,
+      type: "BADGE",
+      status: "ACTIVE",
+      description: `${name} badge`,
+      image_path: `https://example.invalid/badges/${i + 1}.png`,
+    }));
 
-/** A visitor inventory entry the way GET get-visitor-inventory-items returns it. */
-const ownedItem = (id, item, quantity = 1) => ({
+/**
+ * A visitor inventory entry the way GET get-visitor-inventory-items returns it: `metadata` is the user
+ * item's own, `itemMetadata` / `item.metadata` the catalog item's.
+ */
+const ownedItem = (id, item, quantity = 1, metadata = {}) => ({
   id,
   item_id: item.id,
   itemId: item.id,
   quantity,
+  metadata,
+  itemMetadata: item.metadata,
   name: item.name,
+  description: item.description,
   type: item.type,
   status: item.status,
   image_url: item.image_path,
-  item: { id: item.id, name: item.name, description: item.description, type: item.type, image_url: item.image_path },
+  item: {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    type: item.type,
+    metadata: item.metadata,
+    image_url: item.image_path,
+  },
 });
+// Like the public API's reads (getUserInventoryItems: quantity > 0), entries at 0 or below stay stored
+// (a later +1 counts from there) but aren't returned.
+const ownedInventory = (visitor) => (visitor?.inventory || []).filter((entry) => entry.quantity > 0);
 
 // Default unlockable expressions (emotes); world.seed({ expressions }) replaces them for one world.
 const EXPRESSIONS = [
@@ -50,7 +74,20 @@ const EXPRESSIONS = [
   { id: "emote-dance", name: "Dance", type: "emote", expressionImage: "https://example.invalid/emotes/dance.png" },
 ];
 
-const PARTICLES = ["brain_float", "partyPopper_float", "confetti_float"].map((name, i) => ({ id: `particle-${i + 1}`, name }));
+// Accepted particle names. Not the real catalog: a name an app uses is added here without knowing whether
+// the platform has it, so check new names against the real particle list separately.
+const PARTICLES = [
+  "brain_float",
+  "partyPopper_float",
+  "confetti_float",
+  "explosion_float",
+  "sparkles_float",
+  "blueSmoke_puff",
+  "whiteStar_burst",
+  "musicNote_float",
+  "Firework",
+  "confetti_1",
+].map((name, i) => ({ id: `particle-${i + 1}`, name }));
 
 const worlds = new Map();
 const users = new Map();
@@ -128,7 +165,10 @@ const send = (res, status, body) => {
 };
 
 // Like the public API, a write naming a lock.lockId fails with 409 while that lock is held on the same
-// data object; releaseLock: true frees it after the write, otherwise it stays held.
+// data object; releaseLock: true frees it after the write, otherwise it stays held. By default the call's
+// seeded delay runs before the write, which takes and frees the lock in one step, so two releaseLock writes
+// never collide. With holdLocksDuringDelay the write takes the lock first and holds it for its delay, like
+// a real write that takes time: a second write with the same lockId meanwhile gets the 409.
 const heldLocks = new WeakMap(); // data-object holder -> Set of lockIds
 
 const WRITE_ACTIONS = { "set-data-object": "set", "update-data-object": "update", "increment-data-object-value": "increment" };
@@ -138,7 +178,8 @@ const readDataObject = (holder) => clone(holder.dataObject || {});
 
 // Data-object writes shared by world, dropped asset, visitor and user. Returns [status, body].
 // Analytics sent with a successful write are logged as "analytics" events in `world` (if given).
-const writeDataObject = (endpoint, holder, body, world) => {
+// `holdMs`: the call's delay, run while holding the lock (holdLocksDuringDelay).
+const writeDataObject = async (endpoint, holder, body, world, holdMs = 0) => {
   const lockId = body.lock?.lockId;
   if (!heldLocks.has(holder)) heldLocks.set(holder, new Set());
   const locks = heldLocks.get(holder);
@@ -148,6 +189,7 @@ const writeDataObject = (endpoint, holder, body, world) => {
     }
     locks.add(lockId);
   }
+  if (holdMs) await new Promise((resolve) => setTimeout(resolve, holdMs));
   const action = WRITE_ACTIONS[endpoint];
   if (action === "set") holder.dataObject = clone(body.dataObject) || {};
   if (action === "update") holder.dataObject = applyUpdate(holder.dataObject || {}, clone(body.dataObject));
@@ -172,6 +214,13 @@ const routes = [
       for (const visitor of Object.values(world.visitors)) {
         visitorRecord(visitor).dataObject = visitor.dataObject || {};
         delete visitor.dataObject;
+        // Owned catalog items { item: id or name, quantity?, metadata? }, resolved against the world's catalog.
+        for (const { item: ref, quantity = 1, metadata = {} } of visitor.ownedItems || []) {
+          const item = catalog(world).find((i) => i.id === ref || i.name === ref);
+          if (!item) return [400, { message: `seed: no catalog item with id or name "${ref}"` }];
+          (visitor.inventory ||= []).push(ownedItem(`user-item-${++assetCounter}`, item, quantity, metadata));
+        }
+        delete visitor.ownedItems;
       }
       // Data objects of other profiles (players who aren't in the world right now).
       for (const [profileId, dataObject] of Object.entries(userData)) getUser(profileId).dataObject = dataObject;
@@ -180,6 +229,18 @@ const routes = [
     },
   ],
   ["GET", /^\/__mock\/worlds\/([^/]+)$/, ([urlSlug]) => [200, worldWithVisitorData(getWorld(urlSlug))]],
+  [
+    "PATCH",
+    /^\/__mock\/worlds\/([^/]+)$/,
+    ([urlSlug], body) => {
+      // Mid-test changes to how calls are answered, e.g. { failures: {} } to stop injecting failures.
+      const settings = ["failures", "delays", "latencyMs", "holdLocksDuringDelay"];
+      const unknown = Object.keys(body).filter((key) => !settings.includes(key));
+      if (unknown.length) return [400, { message: `can't change ${unknown.join(", ")} mid-test` }];
+      Object.assign(getWorld(urlSlug), clone(body));
+      return [200, { ok: true }];
+    },
+  ],
   [
     "PATCH",
     /^\/__mock\/worlds\/([^/]+)\/visitors\/([^/]+)$/,
@@ -261,6 +322,15 @@ const routes = [
   ],
   [
     "GET",
+    /^\/api\/v1\/user\/inventory\/([^/]+)\/get-user-inventory-items$/,
+    // User.fetchInventoryItems: the inventory that profile's visitor carries in the caller's world.
+    ([profileId], _, __, world) => [
+      200,
+      ownedInventory(Object.values(world?.visitors || {}).find((v) => v.profileId === profileId)),
+    ],
+  ],
+  [
+    "GET",
     /^\/api\/v1\/user\/dataObjects\/([^/]+)\/get-data-object$/,
     ([profileId]) => [200, readDataObject(getUser(profileId))],
   ],
@@ -268,10 +338,16 @@ const routes = [
     "PUT",
     new RegExp(`^/api/v1/user/dataObjects/([^/]+)/(${WRITE_ENDPOINTS})$`),
     // Analytics sent with the write are logged in the caller's world.
-    ([profileId, endpoint], body, _, world) => writeDataObject(endpoint, getUser(profileId), body, world),
+    ([profileId, endpoint], body, _, world, holdMs) => writeDataObject(endpoint, getUser(profileId), body, world, holdMs),
   ],
 
   // ---- world ----
+  // World.fetchDetails. Seed worldDetails to add or override fields.
+  [
+    "GET",
+    /^\/api\/v1\/world\/([^/]+)\/world-details$/,
+    ([slug]) => [200, { urlSlug: slug, name: slug, width: 4000, height: 4000, ...getWorld(slug).worldDetails }],
+  ],
   ["GET", /^\/api\/v1\/world\/([^/]+)\/get-data-object$/, ([slug]) => [200, readDataObject(getWorld(slug))]],
   [
     "PUT",
@@ -284,7 +360,7 @@ const routes = [
   [
     "PUT",
     new RegExp(`^/api/v1/world/([^/]+)/(${WRITE_ENDPOINTS})$`),
-    ([slug, endpoint], body) => writeDataObject(endpoint, getWorld(slug), body, getWorld(slug)),
+    ([slug, endpoint], body, _, __, holdMs) => writeDataObject(endpoint, getWorld(slug), body, getWorld(slug), holdMs),
   ],
   [
     "POST",
@@ -332,6 +408,31 @@ const routes = [
   ],
   [
     "GET",
+    /^\/api\/v1\/world\/([^/]+)\/assets$/,
+    // World.fetchDroppedAssets: every dropped asset in the world, without data objects.
+    ([slug]) => [200, Object.values(getWorld(slug).assets).map(({ dataObject, ...details }) => details)],
+  ],
+  [
+    "PUT",
+    /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)\/set-clickable-link-multi$/,
+    ([slug, id], body) => {
+      // Replaces the asset's links. A link with existingLinkId keeps that id, a new one gets a fresh linkId;
+      // the response is the updated asset (DroppedAsset assigns it to itself). Logged as an event.
+      const world = getWorld(slug);
+      const asset = world.assets[id];
+      if (!asset) return [404, { message: "Asset not found" }];
+      asset.clickType = body.clickType;
+      asset.clickableLinks = (body.clickableLinks || []).map(({ existingLinkId, linkSamlQueryParams, ...link }) => ({
+        ...link,
+        linkId: existingLinkId || `link-${++assetCounter}`,
+      }));
+      world.events.push({ type: "set-clickable-link-multi", assetId: id, clickableLinks: clone(asset.clickableLinks) });
+      const { dataObject, ...details } = asset;
+      return [200, clone(details)];
+    },
+  ],
+  [
+    "GET",
     /^\/api\/v1\/world\/([^/]+)\/assets\/([^/]+)\/data-object$/,
     ([slug, id]) => {
       const asset = getWorld(slug).assets[id];
@@ -341,9 +442,9 @@ const routes = [
   [
     "PUT",
     new RegExp(`^/api/v1/world/([^/]+)/assets/([^/]+)/(${WRITE_ENDPOINTS})$`),
-    ([slug, id, endpoint], body) => {
+    ([slug, id, endpoint], body, _, __, holdMs) => {
       const asset = getWorld(slug).assets[id];
-      return asset ? writeDataObject(endpoint, asset, body, getWorld(slug)) : [404, { message: "Asset not found" }];
+      return asset ? writeDataObject(endpoint, asset, body, getWorld(slug), holdMs) : [404, { message: "Asset not found" }];
     },
   ],
   [
@@ -402,7 +503,9 @@ const routes = [
       const visitor = getWorld(slug).visitors[id];
       if (!visitor) return [404, { message: "Visitor not found" }];
       const { dataObject, inventory, ...details } = visitor;
-      return [200, { ...details, visitorId: Number(id), profile: { profileId: visitor.profileId } }];
+      // Like the real route (getVisitors with a visitorId), a map keyed by visitorId: Visitor.fetchVisitor
+      // reads response.data[id], which also finds the visitor when the app passes the id as a string.
+      return [200, { [id]: { ...details, visitorId: Number(id), profile: { profileId: visitor.profileId } } }];
     },
   ],
   [
@@ -416,17 +519,17 @@ const routes = [
   [
     "PUT",
     new RegExp(`^/api/v1/world/([^/]+)/visitors/([^/]+)/(${WRITE_ENDPOINTS})$`),
-    ([slug, id, endpoint], body) => {
+    ([slug, id, endpoint], body, _, __, holdMs) => {
       const visitor = getWorld(slug).visitors[id];
       return visitor
-        ? writeDataObject(endpoint, visitorRecord(visitor), body, getWorld(slug))
+        ? writeDataObject(endpoint, visitorRecord(visitor), body, getWorld(slug), holdMs)
         : [404, { message: "Visitor not found" }];
     },
   ],
   [
     "GET",
     /^\/api\/v1\/world\/([^/]+)\/visitors\/([^/]+)\/get-visitor-inventory-items$/,
-    ([slug, id]) => [200, getWorld(slug).visitors[id]?.inventory || []],
+    ([slug, id]) => [200, ownedInventory(getWorld(slug).visitors[id])],
   ],
   [
     "PUT",
@@ -443,6 +546,55 @@ const routes = [
       else visitor.inventory.push((owned = ownedItem(`user-item-${++assetCounter}`, item, body.quantity ?? 1)));
       world.events.push({ type: "grant-item", visitorId: id, name: item.name });
       return [200, { inventoryItem: item.id, user_id: visitor.profileId, quantity: owned.quantity }];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/v1\/world\/([^/]+)\/visitors\/([^/]+)\/update-visitor-inventory-item-quantity$/,
+    ([slug, id], body) => {
+      // Visitor.modifyInventoryItemQuantity. Mirrors handleUpdateVisitorInventoryItemQuantity +
+      // grantOrUpdateInventoryItemQuantity: an upsert by item that adds `quantity` as a delta. Like the
+      // platform, a delta of 0 (or none) counts as +1 (quantityDelta || 1), nothing stops the quantity going
+      // to 0 or below (reads then leave the entry out), and the user item's metadata is reset to {}.
+      const world = getWorld(slug);
+      const visitor = world.visitors[id];
+      if (!visitor) return [404, { message: "No user ID found for this visitor" }];
+      visitor.inventory ||= [];
+      let owned;
+      let item;
+      if (body.userItemId) {
+        owned = visitor.inventory.find((entry) => entry.id === body.userItemId);
+        if (!owned) return [404, { message: "User does not currently own this item" }];
+        item = catalog(world).find((i) => i.id === owned.item_id) ?? owned.item;
+      } else {
+        if (!body.itemId) return [400, { message: "Either userItemId or itemId must be provided" }];
+        item = catalog(world).find((i) => i.id === body.itemId);
+        if (!item) return [404, { message: "Item not found" }];
+        owned = visitor.inventory.find((entry) => entry.item_id === item.id);
+      }
+      const delta = Number(body.quantity ?? 1) || 1;
+      if (owned) {
+        owned.quantity += delta;
+        owned.metadata = {};
+      } else visitor.inventory.push((owned = ownedItem(`user-item-${++assetCounter}`, item, delta)));
+      world.events.push({ type: "modify-item", visitorId: id, name: item.name, quantity: delta, total: owned.quantity });
+      // The real response's fields (no user_id: the SDK's UserInventoryItem gets undefined there too).
+      return [
+        201,
+        {
+          inventoryItem: owned.id,
+          item_id: item.id,
+          quantity: owned.quantity,
+          metadata: owned.metadata,
+          name: item.name,
+          description: item.description,
+          image_url: item.image_path,
+          interactive_key_id: PUBLIC_KEY,
+          status: item.status,
+          type: item.type,
+          profile_id: visitor.profileId,
+        },
+      ];
     },
   ],
   [
@@ -571,7 +723,12 @@ const server = http.createServer(async (req, res) => {
     for (const [match, ms] of Object.entries(seeded?.delays || {})) {
       if (call.includes(match)) waitMs += ms;
     }
-    if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    // holdLocksDuringDelay: a data-object write with a lockId runs its delay inside the lock instead (see
+    // writeDataObject), after the failure check below.
+    const holdsLock =
+      seeded?.holdLocksDuringDelay && body.lock?.lockId && new RegExp(`/(${WRITE_ENDPOINTS})$`).test(url.pathname);
+    const holdMs = holdsLock ? waitMs : 0;
+    if (waitMs && !holdsLock) await new Promise((resolve) => setTimeout(resolve, waitMs));
 
     // Seeded failures: { "<substring of 'METHOD /api/v1/...'>": status } answers matching calls with that
     // status (logged as "injected-failure" events), to test how the app handles a Topia call that fails.
@@ -582,12 +739,13 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // Handlers may be async (e.g. to simulate latency). `seeded` is the call's world, if it was seeded.
+    // Handlers may be async (e.g. to simulate latency). `seeded` is the call's world, if it was seeded;
+    // `holdMs` the delay a data-object write runs while holding its lock (holdLocksDuringDelay), else 0.
     for (const [method, pattern, handler] of routes) {
       if (method !== req.method) continue;
       const match = url.pathname.match(pattern);
       if (!match) continue;
-      const [status, payload] = await handler(match.slice(1).map(decodeURIComponent), body, url.searchParams, seeded);
+      const [status, payload] = await handler(match.slice(1).map(decodeURIComponent), body, url.searchParams, seeded, holdMs);
       return send(res, status, payload);
     }
 

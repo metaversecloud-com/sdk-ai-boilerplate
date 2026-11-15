@@ -38,6 +38,16 @@ export type RouteSpec = {
    * read them with getCredentials(req.body). The platform tests then merge them into `data`.
    */
   credentialsIn?: "query" | "body";
+  /**
+   * Body key the route reads the credentials from, for routes that take them nested, e.g.
+   * "interactiveParams" for getCredentials(req.body.interactiveParams). Implies credentialsIn: "body".
+   */
+  credentialsKey?: string;
+  /**
+   * Query parameters the route needs besides the credentials (GET routes that answer early without them,
+   * which would make the secrets scan vacuous).
+   */
+  query?: Record<string, string>;
   data?: Record<string, unknown>;
   knownBugs?: KnownBugs;
 };
@@ -69,6 +79,12 @@ export const ENTRY_PAGE_KNOWN_BUGS: Pick<KnownBugs, "leaksSecret"> = {};
 
 /** Text the app shell's HTML must contain. Change it if the app isn't a React root (e.g. Unity). */
 export const APP_SHELL_MARKER = 'id="root"';
+
+/**
+ * Whether unknown paths serve the app shell (an SPA with client-side routing). false for apps with real
+ * page routes that answer unknown paths with a proper 404 (e.g. Next.js): the fallback test is skipped.
+ */
+export const APP_SHELL_FALLBACK: boolean = true;
 
 /**
  * Bugs of the health endpoint (GET /api/system/health), e.g. { incompleteContract: "EXP-123: no

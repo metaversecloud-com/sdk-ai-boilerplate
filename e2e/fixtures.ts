@@ -26,16 +26,31 @@ export type SeedOptions = {
   visitorData?: Record<string, unknown>;
   /** Badges the visitor already owns. */
   badges?: string[];
+  /**
+   * Catalog items the visitor already owns (any type), by catalog id or name, with their quantity
+   * (default 1) and the user item's own metadata (default {}). Unknown items fail the seed.
+   */
+  inventory?: OwnedItem[];
   /** Extra fields on the visitor (expressions: ["emote-wave"] it owns, username, ...). */
   visitor?: Record<string, unknown>;
-  /** Other players in the world, keyed by visitorId. Act as one with world.as(id) / world.apiAs(id, path). */
+  /**
+   * Other players in the world, keyed by visitorId. Act as one with world.as(id) / world.apiAs(id, path).
+   * Their default profileIds are unique per world; an explicit profileId is shared by every test that uses
+   * it (user data objects are global in the mock), so derive it from the world: world.scopedId("alice").
+   */
   otherVisitors?: Record<number, OtherVisitor>;
-  /** Data objects of profiles that aren't in the world, keyed by profileId. */
+  /** Data objects of profiles that aren't in the world, keyed by profileId (use world.scopedId(...) keys). */
   users?: Record<string, Record<string, unknown>>;
-  /** The ecosystem inventory catalog (GET /inventory, grants). Default: the mock's four Quiz badges. */
+  /**
+   * The ecosystem inventory catalog (GET /inventory, grants) for this world. Default: mock-topia/catalog.json
+   * if the app has one, else four Quiz badges. Useless for apps that cache the catalog process-wide (they
+   * keep the first world's): give those a catalog.json instead.
+   */
   inventoryItems?: InventoryItem[];
   /** Unlockable expressions (GET /expressions, grant-expression). Default: the mock's Wave and Dance. */
   expressions?: Array<{ id: string; name: string } & Record<string, unknown>>;
+  /** Extra fields for GET /world-details (World.fetchDetails); default { urlSlug, name, width, height }. */
+  worldDetails?: Record<string, unknown>;
   /** Further dropped assets in the world, keyed by id. */
   extraAssets?: Record<string, Record<string, unknown>>;
   /** Delay for every public-API call into the world, so concurrent requests overlap. */
@@ -51,7 +66,16 @@ export type SeedOptions = {
    * { "grant-visitor-inventory-item": 500 }. Matched like delays; logged as "injected-failure" events.
    */
   failures?: Record<string, number>;
+  /**
+   * Data-object writes with a lockId take the lock first and hold it for their delay (latencyMs + delays),
+   * like a real write that takes time, so a concurrent write with the same lockId gets 409. Default false:
+   * the delay runs before the write, which takes and frees the lock at once.
+   */
+  holdLocksDuringDelay?: boolean;
 };
+
+/** A catalog item a visitor owns: catalog id or name, quantity (default 1), user item metadata (default {}). */
+export type OwnedItem = { item: string; quantity?: number; metadata?: Record<string, unknown> };
 
 /** Another player in the world. Defaults: profileId "<world.profileId>-v<id>", displayName "Player <id>". */
 export type OtherVisitor = {
@@ -62,6 +86,7 @@ export type OtherVisitor = {
   inZone?: boolean;
   visitorData?: Record<string, unknown>;
   badges?: string[];
+  inventory?: OwnedItem[];
 } & Record<string, unknown>;
 
 /** An ecosystem inventory item as GET /inventory returns it. */
@@ -111,15 +136,18 @@ export class TopiaWorld {
     worldData = {},
     visitorData = {},
     badges = [],
+    inventory = [],
     visitor = {},
     otherVisitors = {},
     users = {},
     inventoryItems,
     expressions,
+    worldDetails,
     extraAssets = {},
     latencyMs = 0,
     delays = {},
     failures = {},
+    holdLocksDuringDelay = false,
   }: SeedOptions = {}) {
     this.others = otherVisitors;
     const assets: Record<string, any> = { ...extraAssets };
@@ -142,6 +170,8 @@ export class TopiaWorld {
         latencyMs,
         delays,
         failures,
+        holdLocksDuringDelay,
+        worldDetails,
         assets,
         users,
         inventoryItems,
@@ -151,7 +181,14 @@ export class TopiaWorld {
             Object.entries(otherVisitors).map(
               ([
                 id,
-                { inZone: zoned = true, visitorData: data = {}, badges: owned = [], isAdmin: admin = false, ...rest },
+                {
+                  inZone: zoned = true,
+                  visitorData: data = {},
+                  badges: owned = [],
+                  inventory: items = [],
+                  isAdmin: admin = false,
+                  ...rest
+                },
               ]) => [
                 id,
                 {
@@ -161,6 +198,7 @@ export class TopiaWorld {
                   privateZoneId: "",
                   dataObject: data,
                   inventory: owned.map(ownedBadge),
+                  ownedItems: items,
                   ...rest,
                 },
               ],
@@ -174,12 +212,30 @@ export class TopiaWorld {
             privateZoneId: "",
             dataObject: visitorData,
             inventory: badges.map(ownedBadge),
+            ownedItems: inventory,
             ...visitor,
           },
         },
       },
     });
-    if (!response.ok()) throw new Error(`Seeding mock world failed: ${response.status()}`);
+    if (!response.ok()) throw new Error(`Seeding mock world failed: ${response.status()} ${await response.text()}`);
+  }
+
+  /**
+   * Replaces the injected failures mid-test (same format as seed's `failures`); no argument stops them,
+   * e.g. to check the app recovers once Topia answers again.
+   */
+  async setFailures(failures: Record<string, number> = {}) {
+    const response = await this.request.patch(`${MOCK_TOPIA_URL}/__mock/worlds/${this.urlSlug}`, { data: { failures } });
+    if (!response.ok()) throw new Error(`Changing mock failures failed: ${response.status()}`);
+  }
+
+  /**
+   * An id unique to this world, e.g. an explicit profileId for otherVisitors or a `users` key: profiles are
+   * global in the mock, so a fixed "alice" would be shared by every test running in parallel.
+   */
+  scopedId(name: string) {
+    return `${this.profileId}-${name}`;
   }
 
   /** Changes visitor fields mid-test (moveTo, isAdmin, landmarkZonesString, ...). */
@@ -290,15 +346,30 @@ export class TopiaWorld {
   }
 }
 
-export const test = base.extend<{ world: TopiaWorld; uniqueAssetId: boolean }>({
+// A 24x24 stand-in for the SDK style's CDN icons (stubSdkIcons).
+const ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24"/></svg>';
+
+export const test = base.extend<{ world: TopiaWorld; uniqueAssetId: boolean; stubSdkIcons: boolean }>({
   uniqueAssetId: [false, { option: true }],
+  /**
+   * test.use({ stubSdkIcons: true }) answers https://sdk-style.s3.amazonaws.com/icons/* with a 24x24 SVG
+   * instead of aborting it. A button whose only content is such an icon is otherwise 0x0 and Playwright
+   * can't click it (or use press() from helpers/press.ts).
+   */
+  stubSdkIcons: [false, { option: true }],
   // The browser may only talk to the app: anything else (CDNs, analytics, real Topia) is aborted, so a
   // test can't pass or flake on the network.
-  context: async ({ context }, use) => {
+  context: async ({ context, stubSdkIcons }, use) => {
     await context.route(
       (url) => !["localhost", "127.0.0.1"].includes(url.hostname),
       (route) => route.abort(),
     );
+    // Registered last, so it's matched first.
+    if (stubSdkIcons) {
+      await context.route("https://sdk-style.s3.amazonaws.com/icons/**", (route) =>
+        route.fulfill({ contentType: "image/svg+xml", body: ICON_SVG }),
+      );
+    }
     await use(context);
   },
   world: async ({ request, uniqueAssetId }, use, testInfo) => {

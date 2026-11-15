@@ -8,6 +8,7 @@ const { APP_SHELL_MARKER, ENTRY_PAGE } = config;
 // Read through the namespace so an app.config.ts from before these settings existed still works.
 const HEALTH_KNOWN_BUGS = config.HEALTH_KNOWN_BUGS ?? {};
 const PROCESS_KNOWN_BUGS = config.PROCESS_KNOWN_BUGS ?? {};
+const APP_SHELL_FALLBACK = config.APP_SHELL_FALLBACK ?? true;
 
 test("health endpoint keeps the contract monitoring relies on", async ({ request }) => {
   test.fail(!!HEALTH_KNOWN_BUGS.incompleteContract, HEALTH_KNOWN_BUGS.incompleteContract);
@@ -45,6 +46,7 @@ test("a promise rejection nobody handles doesn't take the server down", async ()
 
 test("unknown pages fall back to the app shell", async ({ request }) => {
   test.skip(ENTRY_PAGE === null, "the app has no page");
+  test.skip(!APP_SHELL_FALLBACK, "the app answers unknown pages with a real 404 (APP_SHELL_FALLBACK = false)");
   const response = await request.get("/some/deep/link");
 
   expect(response.ok()).toBe(true);
