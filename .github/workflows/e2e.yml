@@ -1,0 +1,90 @@
+name: E2E tests
+
+# Managed by Terraform (config_texts github_files "e2e.yml"); edit it there, not in the repo.
+on:
+  # Every push to a PR branch. "E2E" is meant to be a required check, so the PR can't merge while it runs or fails.
+  pull_request:
+  # Manual: compare Node versions side by side, e.g. before changing vars.node_version.
+  workflow_dispatch:
+    inputs:
+      node_versions:
+        description: 'Node versions to build and test, as a JSON list'
+        default: '["24"]'
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    # Keep this name stable: branch protection requires a check called "E2E".
+    name: E2E
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Repos without an e2e/ folder pass with a notice, so this workflow can ship to every SDK repo.
+      - name: Check for e2e tests
+        id: detect
+        run: |
+          if [ -f e2e/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No e2e/ folder in this repo yet, nothing to test. Copy it from sdk-ai-boilerplate."
+          fi
+      # Same build Node as the release workflow; the image runs whatever Node the Dockerfile picks.
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.present == 'true'
+        with:
+          node-version: ${{ vars.node_version }}
+          cache: 'npm'
+      - if: steps.detect.outputs.present == 'true'
+        run: npm i
+      - if: steps.detect.outputs.present == 'true'
+        run: npm ci
+        working-directory: e2e
+      - if: steps.detect.outputs.present == 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - if: steps.detect.outputs.present == 'true'
+        run: e2e/scripts/test-image.sh
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.detect.outputs.present == 'true' }}
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 14
+
+  e2e-node-matrix:
+    name: E2E node comparison
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node_version: ${{ fromJSON(inputs.node_versions || '["24"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node_version }}
+          cache: 'npm'
+      - run: npm i
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: e2e/scripts/test-image.sh "${{ matrix.node_version }}"
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-node${{ matrix.node_version }}
+          path: e2e/playwright-report
+          retention-days: 14
