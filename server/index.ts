@@ -1,4 +1,4 @@
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import router from "./routes.js";
@@ -26,6 +26,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+// A malformed JSON body gets a clean 400 instead of Express' default error page (stack trace, file paths).
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err?.type === "entity.parse.failed") return res.status(400).json({ success: false, error: "Invalid JSON" });
+  next(err);
+});
 // Strips the interactive secret, signed JWTs and session credentials from every /api response,
 // including raw SDK objects and SDK errors. Must be registered before the routes to run at all.
 app.use("/api", function (req, res, next) {
@@ -65,7 +70,9 @@ if (process.env.NODE_ENV === "development") {
   });
 }
 
-// Prevent crashes from unhandled promise rejections (e.g., API timeouts after response sent)
+// Prevent crashes from unhandled promise rejections (e.g., API timeouts after response sent).
+// @rtsdk/topia registers its own handler that calls process.exit(1) when it's imported: remove it first.
+process.removeAllListeners("unhandledRejection");
 process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection:", reason);
 });

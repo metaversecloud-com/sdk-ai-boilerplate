@@ -30,9 +30,7 @@ jest.mock("@utils/index.js", () => ({
   errorHandler: jest.fn(),
   getCredentials: jest.fn(),
   getDroppedAsset: jest.fn(),
-  Visitor: {
-    get: jest.fn(),
-  },
+  getVisitor: jest.fn(),
   World: {
     create: jest.fn(),
   },
@@ -76,7 +74,7 @@ describe("routes", () => {
     // Setup mocks
     mockUtils.getCredentials.mockReturnValue(baseCreds);
     mockUtils.getDroppedAsset.mockResolvedValue(mockDroppedAsset);
-    mockUtils.Visitor.get.mockResolvedValue(mockVisitor);
+    mockUtils.getVisitor.mockResolvedValue({ visitor: mockVisitor });
     mockUtils.World.create.mockReturnValue(mockWorld);
     mockedAxios.post.mockResolvedValue({ data: { success: true } });
 
@@ -98,7 +96,7 @@ describe("routes", () => {
       visitorId: "1" // Query params come as strings
     }));
     expect(mockUtils.getDroppedAsset).toHaveBeenCalledWith(baseCreds);
-    expect(mockUtils.Visitor.get).toHaveBeenCalledWith(baseCreds.visitorId, baseCreds.urlSlug, { credentials: baseCreds });
+    expect(mockUtils.getVisitor).toHaveBeenCalledWith(baseCreds, true);
     expect(mockUtils.World.create).toHaveBeenCalledWith(baseCreds.urlSlug, { credentials: baseCreds });
     expect(mockWorld.triggerParticle).toHaveBeenCalledWith({
       name: "Sparkle",
@@ -106,8 +104,8 @@ describe("routes", () => {
       position: mockDroppedAsset.position
     });
     expect(mockWorld.fireToast).toHaveBeenCalledWith({
-      title: "You've leveled up!",
-      text: "Congratulations! You've reached a new level."
+      title: "Nice Work!",
+      text: "You've successfully completed the task!",
     });
   });
 
@@ -115,7 +113,7 @@ describe("routes", () => {
     const mockError = new Error("Asset not found");
 
     mockUtils.getCredentials.mockReturnValue(baseCreds);
-    mockUtils.getDroppedAsset.mockResolvedValue(mockError);
+    mockUtils.getDroppedAsset.mockRejectedValue(mockError);
 
     // Mock errorHandler to actually call res.status().json() to end the response
     mockUtils.errorHandler.mockImplementation(({ res }: any) => {

@@ -2,29 +2,16 @@
 // SDK errors carry params.interactiveSecret.
 const keys = ["topia", "credentials", "jwt", "requestOptions", "interactiveSecret"];
 
+// Deletes those keys at any depth, in place. One pass over the payload: the previous version re-walked
+// every child once per key, which took seconds on a few levels of nesting.
 export const cleanReturnPayload = (payload: any) => {
-  const keyExists = (payload: any) => {
-    if (!payload || (typeof payload !== "object" && !Array.isArray(payload))) return payload;
-
-    for (const i in keys) {
-      const key = keys[i];
-      if (payload.hasOwnProperty(key)) {
-        delete payload[key];
-      } else if (Array.isArray(payload)) {
-        for (let i = 0; i < payload.length; i++) {
-          const result = keyExists(payload[i]);
-          if (result) delete payload[i][key];
-        }
-      } else {
-        for (const k in payload) {
-          const result = keyExists(payload[k]);
-          if (result) delete payload[k][key];
-        }
-      }
-    }
-
-    return payload;
+  const seen = new WeakSet();
+  const clean = (value: any) => {
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    for (const key of keys) delete value[key];
+    for (const k in value) clean(value[k]);
   };
-  keyExists(payload);
+  clean(payload);
   return payload;
 };
