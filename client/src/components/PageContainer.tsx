@@ -21,12 +21,12 @@ export const PageContainer = ({
   if (isLoading) return <Loading />;
 
   return (
-    <div className="p-4 mb-28">
+    <div className="p-2 mb-28 min-h-[100vh]">
       {isAdmin && (
         <AdminIconButton setShowSettings={() => setShowSettings(!showSettings)} showSettings={showSettings} />
       )}
       {headerText && (
-        <div className="pb-6">
+        <div className="pb-3">
           <h2>{headerText}</h2>
         </div>
       )}
